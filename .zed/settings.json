@@ -1,6 +1,11 @@
 {
   "lsp": {
     "gopls": {
+      "binary": {
+        "env": {
+          "GOFLAGS": "-tags=gemini_e2e"
+        }
+      },
       "settings": {
         "gopls": {
           "buildFlags": ["-tags=gemini_e2e"]
