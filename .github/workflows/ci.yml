@@ -61,14 +61,14 @@ jobs:
       - name: E2E (docker compose via venom)
         run: |
           mkdir -p out/venom
-          ./venom run test/venom/enricher_e2e.yml --format=xml --output-dir=out/venom --html-report
+          ./venom run test/venom/enricher_e2e.yml --format=xml --output-dir=out/venom
 
       - name: Upload venom report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: venom-report
-          path: out/venom
+          path: out/venom/*.xml
 
   docker:
     runs-on: ubuntu-latest

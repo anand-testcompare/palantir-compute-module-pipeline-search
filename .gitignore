@@ -38,6 +38,9 @@ issue-drafts/
 TODO.md
 .local/
 
+# Local tooling
+.opencode/
+
 # Local build and test artifacts
 out/
 bin/

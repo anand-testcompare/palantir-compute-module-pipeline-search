@@ -30,6 +30,12 @@ Run Foundry-like end-to-end locally (mock dataset API + real container):
 docker compose -f docker-compose.test.yml up --abort-on-container-exit --build
 ```
 
+Run black-box E2E via Venom (generates an HTML report under `out/venom/`):
+
+```
+bash test/scripts/run_venom_e2e_local.sh
+```
+
 Run the local harness with your own input CSV (not committed):
 
 ```
