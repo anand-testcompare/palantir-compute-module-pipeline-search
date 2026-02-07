@@ -1,0 +1,27 @@
+services:
+  mock-foundry:
+    build:
+      context: .
+      dockerfile: Dockerfile.mock-foundry
+    environment:
+      MOCK_FOUNDRY_ADDR: ":8080"
+      MOCK_FOUNDRY_INPUT_DIR: "/data/inputs"
+      MOCK_FOUNDRY_UPLOAD_DIR: "/data/uploads"
+    volumes:
+      - ./test/fixtures/mock-foundry/inputs:/data/inputs:ro
+      - ./test/artifacts/mock-foundry/uploads:/data/uploads
+
+  enricher:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - mock-foundry
+    environment:
+      FOUNDRY_URL: "http://mock-foundry:8080"
+      BUILD2_TOKEN: "/fixtures/token.txt"
+      RESOURCE_ALIAS_MAP: "/fixtures/alias-map.json"
+    volumes:
+      - ./test/fixtures:/fixtures:ro
+    command: ["foundry"]
+

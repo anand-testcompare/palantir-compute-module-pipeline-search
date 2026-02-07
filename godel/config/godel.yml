@@ -1,0 +1,10 @@
+exclude:
+  names:
+    - "\\..+"
+    - "vendor"
+  paths:
+    - "godel"
+    - "issue-drafts"
+    - "out"
+    - "bin"
+    - "test/artifacts"

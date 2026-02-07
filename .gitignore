@@ -36,3 +36,9 @@ issue-drafts/
 
 # Local planning (repo is public; avoid accidental commits)
 TODO.md
+.local/
+
+# Local build and test artifacts
+out/
+bin/
+test/artifacts/

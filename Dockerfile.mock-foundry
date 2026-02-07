@@ -1,0 +1,16 @@
+# syntax=docker/dockerfile:1
+
+FROM --platform=linux/amd64 golang:1.25 AS builder
+
+WORKDIR /src
+COPY . .
+
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/mock-foundry ./cmd/mock-foundry
+
+FROM gcr.io/distroless/static-debian12:nonroot
+
+COPY --from=builder /out/mock-foundry /mock-foundry
+
+USER 0
+
+ENTRYPOINT ["/mock-foundry"]

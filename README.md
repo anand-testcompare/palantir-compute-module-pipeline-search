@@ -10,6 +10,32 @@ This is a one-shot batch container triggered by Foundry pipeline builds (not a l
 
 It should also be runnable locally (without Foundry) against a local input file for faster iteration and personal one-off batches.
 
+## Development
+
+Verify (format, checks, tests):
+
+```
+./godelw verify
+```
+
+Run locally (no Foundry, no Gemini required):
+
+```
+go run ./cmd/enricher local --input /path/to/emails.csv --output /path/to/enriched.csv
+```
+
+Run Foundry-like end-to-end locally (mock dataset API + real container):
+
+```
+docker compose -f docker-compose.test.yml up --abort-on-container-exit --build
+```
+
+Run the local harness with your own input CSV (not committed):
+
+```
+docker compose -f docker-compose.local.yml up --abort-on-container-exit --build
+```
+
 ## Docs
 
 - `docs/DESIGN.md`: architecture, interfaces, local testing approach

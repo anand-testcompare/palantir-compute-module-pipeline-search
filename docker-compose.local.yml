@@ -1,0 +1,40 @@
+# Local, user-driven harness run.
+#
+# Usage:
+#  1. Create input dir:
+#       mkdir -p .local/mock-foundry/inputs .local/mock-foundry/uploads
+#  2. Place your input CSV at:
+#       .local/mock-foundry/inputs/<INPUT_RID>.csv
+#     where INPUT_RID is the "rid" for alias "input" in test/fixtures/alias-map.json.
+#  3. Run:
+#       docker compose -f docker-compose.local.yml up --abort-on-container-exit --build
+#
+# Outputs will be written under:
+#   .local/mock-foundry/uploads/<OUTPUT_RID>/<TXN_ID>/
+services:
+  mock-foundry:
+    build:
+      context: .
+      dockerfile: Dockerfile.mock-foundry
+    environment:
+      MOCK_FOUNDRY_ADDR: ":8080"
+      MOCK_FOUNDRY_INPUT_DIR: "/data/inputs"
+      MOCK_FOUNDRY_UPLOAD_DIR: "/data/uploads"
+    volumes:
+      - ./.local/mock-foundry/inputs:/data/inputs:ro
+      - ./.local/mock-foundry/uploads:/data/uploads
+
+  enricher:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - mock-foundry
+    environment:
+      FOUNDRY_URL: "http://mock-foundry:8080"
+      BUILD2_TOKEN: "/fixtures/token.txt"
+      RESOURCE_ALIAS_MAP: "/fixtures/alias-map.json"
+    volumes:
+      - ./test/fixtures:/fixtures:ro
+    command: ["foundry"]
+
