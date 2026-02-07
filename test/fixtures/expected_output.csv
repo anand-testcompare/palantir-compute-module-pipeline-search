@@ -1,3 +1,0 @@
-email,linkedin_url,company,title,description,confidence,status,error,model,sources,web_search_queries
-alice@example.com,,example.com,,,mock,ok,,gemini-2.5-flash,"[""https://source.invalid/example.com"",""https://context.invalid/example.com""]","[""company example.com linkedin""]"
-bob@corp.test,,corp.test,,,mock,ok,,gemini-2.5-flash,"[""https://source.invalid/corp.test"",""https://context.invalid/corp.test""]","[""company corp.test linkedin""]"

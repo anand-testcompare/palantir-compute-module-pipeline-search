@@ -47,7 +47,7 @@ Additional configuration this module expects (not injected automatically):
 
 Optional Gemini knobs:
 
-- `GEMINI_BASE_URL`: override Gemini API base URL (useful for hermetic local mocks)
+- `GEMINI_BASE_URL`: override Gemini API base URL (useful for proxies/testing)
 - `GEMINI_CAPTURE_AUDIT`: include sources/queries in output (`true|false`)
 
 Security notes:
@@ -147,7 +147,6 @@ Recommended MVP output columns (joinable and debuggable):
 The enrichment step is a single function boundary (interface) so unit/integration tests can:
 
 - use deterministic test fakes (no network)
-- use a mock Gemini HTTP server (hermetic)
 
 Desired behavior:
 
@@ -192,6 +191,7 @@ Layer 2: integration test using `httptest.Server`
 Layer 3: Docker Compose smoke test
 
 - Run the real container image against a mock Foundry service
+- Requires real Gemini API access (set `GEMINI_API_KEY` and `GEMINI_MODEL`)
 - Validate file mounts, env var loading, and end-to-end execution
 - Treat the mock Foundry service as a reusable local harness, not test-only
 
@@ -205,7 +205,6 @@ Layer 4: Gemini integration tests (real network)
 ```
 cmd/enricher/main.go
 cmd/mock-foundry/main.go
-cmd/mock-gemini/main.go
 internal/
   app/
     enricher.go
@@ -217,8 +216,6 @@ internal/
     env.go
   mockfoundry/
     server.go
-  mockgemini/
-    server.go
   pipeline/
     csv.go
     rows.go
@@ -226,11 +223,9 @@ internal/
     csv.go
 test/
   fixtures/
-docker-compose.test.yml
 docker-compose.local.yml
 Dockerfile
 Dockerfile.mock-foundry
-Dockerfile.mock-gemini
 ```
 
 ## Container Image

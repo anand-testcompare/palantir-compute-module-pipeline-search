@@ -16,7 +16,7 @@ type Config struct {
 	APIKey string
 	Model  string
 
-	// BaseURL overrides the Gemini API base URL. Useful for hermetic tests (mock server).
+	// BaseURL overrides the Gemini API base URL. Useful for proxies/testing.
 	BaseURL string
 
 	// CaptureAudit controls whether sources/queries are extracted into the output.

@@ -185,7 +185,7 @@ Environment (foundry):
 Environment (Gemini):
   GEMINI_API_KEY        Gemini API key (required)
   GEMINI_MODEL          Gemini model name (required)
-  GEMINI_BASE_URL       Optional base URL override (used for hermetic mocks)
+  GEMINI_BASE_URL       Optional base URL override (proxies/testing)
   GEMINI_CAPTURE_AUDIT  If set to true/1, include sources/queries in output
 
 `)

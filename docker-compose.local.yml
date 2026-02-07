@@ -24,27 +24,19 @@ services:
       - ./.local/mock-foundry/inputs:/data/inputs:ro
       - ./.local/mock-foundry/uploads:/data/uploads
 
-  mock-gemini:
-    build:
-      context: .
-      dockerfile: Dockerfile.mock-gemini
-    environment:
-      MOCK_GEMINI_ADDR: ":8081"
-
   enricher:
     build:
       context: .
       dockerfile: Dockerfile
     depends_on:
       - mock-foundry
-      - mock-gemini
     environment:
       FOUNDRY_URL: "http://mock-foundry:8080"
       BUILD2_TOKEN: "/fixtures/token.txt"
       RESOURCE_ALIAS_MAP: "/fixtures/alias-map.json"
-      GEMINI_API_KEY: "${GEMINI_API_KEY:-dummy-key}"
+      GEMINI_API_KEY: "${GEMINI_API_KEY}"
       GEMINI_MODEL: "${GEMINI_MODEL:-gemini-2.5-flash}"
-      GEMINI_BASE_URL: "${GEMINI_BASE_URL:-http://mock-gemini:8081}"
+      GEMINI_BASE_URL: "${GEMINI_BASE_URL:-}"
       GEMINI_CAPTURE_AUDIT: "${GEMINI_CAPTURE_AUDIT:-true}"
     volumes:
       - ./test/fixtures:/fixtures:ro

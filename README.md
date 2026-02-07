@@ -26,23 +26,13 @@ export GEMINI_MODEL=gemini-2.5-flash
 go run ./cmd/enricher local --input /path/to/emails.csv --output /path/to/enriched.csv
 ```
 
-Run Foundry-like end-to-end locally (mock dataset API + mock Gemini + real container):
-
-```
-docker compose -f docker-compose.test.yml up --abort-on-container-exit --build
-```
-
-Run black-box E2E via Venom (generates an HTML report under `out/venom/`):
-
-```
-bash test/scripts/run_venom_e2e_local.sh
-```
-
-Run the local harness with your own input CSV (not committed):
+Run Foundry-like end-to-end locally (mock dataset API + real Gemini + real container):
 
 ```
 docker compose -f docker-compose.local.yml up --abort-on-container-exit --build
 ```
+
+See `docker-compose.local.yml` for how to provide the input CSV and where outputs are written.
 
 ## Docs
 

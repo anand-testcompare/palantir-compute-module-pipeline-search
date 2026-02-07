@@ -31,7 +31,7 @@ Optional knobs:
 - `FAIL_FAST` (bool)
 - `RATE_LIMIT_RPS` (float)
 - `GEMINI_CAPTURE_AUDIT` (bool)
-- `GEMINI_BASE_URL` (string; for hermetic testing only, not recommended in Foundry)
+- `GEMINI_BASE_URL` (string; optional base URL override for proxies/testing, not recommended in Foundry)
 
 ### Egress Policy
 
