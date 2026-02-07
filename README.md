@@ -18,13 +18,15 @@ Verify (format, checks, tests):
 ./godelw verify
 ```
 
-Run locally (no Foundry, no Gemini required):
+Run locally (no Foundry required, Gemini required):
 
 ```
+export GEMINI_API_KEY=...
+export GEMINI_MODEL=gemini-2.5-flash
 go run ./cmd/enricher local --input /path/to/emails.csv --output /path/to/enriched.csv
 ```
 
-Run Foundry-like end-to-end locally (mock dataset API + real container):
+Run Foundry-like end-to-end locally (mock dataset API + mock Gemini + real container):
 
 ```
 docker compose -f docker-compose.test.yml up --abort-on-container-exit --build

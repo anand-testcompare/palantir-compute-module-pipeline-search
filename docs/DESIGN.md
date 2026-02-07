@@ -11,7 +11,7 @@ This project is a pipeline-mode Foundry Compute Module (Go) that runs as a one-s
 This repo should also support a local, non-Foundry run mode for personal use and faster iteration:
 
 - Read a local input file of emails
-- Enrich via Gemini (or a stub)
+- Enrich via Gemini
 - Write a local output file
 
 Non-goals:
@@ -43,6 +43,12 @@ Additional configuration this module expects (not injected automatically):
 
 - `FOUNDRY_URL`: Foundry base URL used to call dataset APIs, e.g. `https://<your-stack>.palantirfoundry.com`
 - `GEMINI_API_KEY`: Gemini API key (inject as a secret)
+- `GEMINI_MODEL`: Gemini model name (inject as config)
+
+Optional Gemini knobs:
+
+- `GEMINI_BASE_URL`: override Gemini API base URL (useful for hermetic local mocks)
+- `GEMINI_CAPTURE_AUDIT`: include sources/queries in output (`true|false`)
 
 Security notes:
 
@@ -132,16 +138,16 @@ Recommended MVP output columns (joinable and debuggable):
 - `confidence` (string or float)
 - `status` (string, e.g. `ok|not_found|error`)
 - `error` (string, empty on success)
-
-Optional audit fields (consider for later):
-
-- `web_search_queries` (string, JSON-encoded)
-- `sources` (string, JSON-encoded URLs)
 - `model` (string)
+- `sources` (string, JSON-encoded URLs)
+- `web_search_queries` (string, JSON-encoded)
 
 ## Enrichment (Gemini)
 
-The enrichment step is a single function boundary (interface) so unit/integration tests can stub it.
+The enrichment step is a single function boundary (interface) so unit/integration tests can:
+
+- use deterministic test fakes (no network)
+- use a mock Gemini HTTP server (hermetic)
 
 Desired behavior:
 
@@ -180,7 +186,7 @@ Layer 1: unit tests (no network, no Docker)
 Layer 2: integration test using `httptest.Server`
 
 - Mock the small Foundry API surface used by the module
-- Run the orchestration end-to-end with a stubbed enricher
+- Run the orchestration end-to-end with a deterministic test enricher (no network)
 - Assert: correct API calls + output file schema/content
 
 Layer 3: Docker Compose smoke test
@@ -189,26 +195,29 @@ Layer 3: Docker Compose smoke test
 - Validate file mounts, env var loading, and end-to-end execution
 - Treat the mock Foundry service as a reusable local harness, not test-only
 
-Layer 4: Gemini integration tests (opt-in)
+Layer 4: Gemini integration tests (real network)
 
 - Prefer early, realistic end-to-end runs against the real Gemini API using a tiny fixture
-- Keep opt-in behind a build tag and a required env var so CI stays hermetic
+- Run in CI with required secrets and fail loudly if missing
 
 ## Repo Layout
 
 ```
 cmd/enricher/main.go
 cmd/mock-foundry/main.go
+cmd/mock-gemini/main.go
 internal/
   app/
     enricher.go
   enrich/
-    stub.go
+    gemini/
     types.go
   foundry/
     client.go
     env.go
   mockfoundry/
+    server.go
+  mockgemini/
     server.go
   pipeline/
     csv.go
@@ -221,6 +230,7 @@ docker-compose.test.yml
 docker-compose.local.yml
 Dockerfile
 Dockerfile.mock-foundry
+Dockerfile.mock-gemini
 ```
 
 ## Container Image

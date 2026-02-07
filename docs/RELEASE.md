@@ -21,13 +21,17 @@ You must provide (via compute module configuration):
 
 - `FOUNDRY_URL`: Foundry base URL (example format: `https://<your-stack>.palantirfoundry.com`)
 - `GEMINI_API_KEY`: inject as a secret (do not hardcode)
+- `GEMINI_MODEL`: Gemini model name (do not hardcode in code; configure per environment)
 
-Optional knobs (recommended to add as the code lands):
+Optional knobs:
 
 - `WORKERS` (int)
-- `GEMINI_MODEL` (string)
 - `MAX_RETRIES` (int)
 - `REQUEST_TIMEOUT` (duration)
+- `FAIL_FAST` (bool)
+- `RATE_LIMIT_RPS` (float)
+- `GEMINI_CAPTURE_AUDIT` (bool)
+- `GEMINI_BASE_URL` (string; for hermetic testing only, not recommended in Foundry)
 
 ### Egress Policy
 
