@@ -13,6 +13,11 @@ type Result struct {
 	Title       string
 	Description string
 	Confidence  string
+
+	// Optional audit/debug fields.
+	Model            string
+	Sources          []string
+	WebSearchQueries []string
 }
 
 // Enricher enriches a single email address.

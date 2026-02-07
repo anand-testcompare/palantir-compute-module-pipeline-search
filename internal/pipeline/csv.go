@@ -21,6 +21,9 @@ func WriteCSV(w io.Writer, rows []Row) error {
 			r.Confidence,
 			r.Status,
 			r.Error,
+			r.Model,
+			r.Sources,
+			r.WebSearchQueries,
 		}); err != nil {
 			return err
 		}

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/palantir/palantir-compute-module-pipeline-search/internal/app"
@@ -15,6 +16,22 @@ import (
 	"github.com/palantir/palantir-compute-module-pipeline-search/internal/mockfoundry"
 	"github.com/palantir/palantir-compute-module-pipeline-search/internal/pipeline"
 )
+
+type testEnricher struct{}
+
+func (testEnricher) Enrich(_ context.Context, email string) (enrich.Result, error) {
+	domain := ""
+	if at := strings.LastIndex(email, "@"); at >= 0 && at+1 < len(email) {
+		domain = email[at+1:]
+	}
+	return enrich.Result{
+		Company:          domain,
+		Confidence:       "test",
+		Model:            "test-model",
+		Sources:          []string{"https://source.invalid/" + domain},
+		WebSearchQueries: []string{"company " + domain},
+	}, nil
+}
 
 func TestRunFoundry_EndToEndAgainstMock(t *testing.T) {
 	t.Parallel()
@@ -47,7 +64,7 @@ func TestRunFoundry_EndToEndAgainstMock(t *testing.T) {
 		},
 	}
 
-	if err := app.RunFoundry(context.Background(), env, "input", "output", "enriched.csv", pipeline.Options{}, enrich.Stub{}); err != nil {
+	if err := app.RunFoundry(context.Background(), env, "input", "output", "enriched.csv", pipeline.Options{}, testEnricher{}); err != nil {
 		t.Fatalf("RunFoundry failed: %v", err)
 	}
 
@@ -95,11 +112,11 @@ func TestRunFoundry_EndToEndAgainstMock(t *testing.T) {
 		}
 	}
 
-	// Row contents are deterministic with the stub enricher.
-	if records[1][0] != "alice@example.com" || records[1][2] != "example.com" || records[1][5] != "stub" || records[1][6] != "ok" {
+	// Row contents are deterministic with the test enricher.
+	if records[1][0] != "alice@example.com" || records[1][2] != "example.com" || records[1][5] != "test" || records[1][6] != "ok" || records[1][8] != "test-model" {
 		t.Fatalf("unexpected row[1]: %#v", records[1])
 	}
-	if records[2][0] != "bob@corp.test" || records[2][2] != "corp.test" || records[2][5] != "stub" || records[2][6] != "ok" {
+	if records[2][0] != "bob@corp.test" || records[2][2] != "corp.test" || records[2][5] != "test" || records[2][6] != "ok" || records[2][8] != "test-model" {
 		t.Fatalf("unexpected row[2]: %#v", records[2])
 	}
 }

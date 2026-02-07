@@ -3,6 +3,8 @@ package pipeline_test
 import (
 	"bytes"
 	"context"
+	"encoding/csv"
+	"errors"
 	"strings"
 	"testing"
 
@@ -10,8 +12,25 @@ import (
 	"github.com/palantir/palantir-compute-module-pipeline-search/internal/pipeline"
 )
 
+type testEnricher struct{}
+
+func (testEnricher) Enrich(_ context.Context, email string) (enrich.Result, error) {
+	if strings.HasSuffix(strings.ToLower(strings.TrimSpace(email)), "@error.test") {
+		return enrich.Result{}, errors.New("test enricher: forced error")
+	}
+	domain := ""
+	if at := strings.LastIndex(email, "@"); at >= 0 && at+1 < len(email) {
+		domain = email[at+1:]
+	}
+	return enrich.Result{
+		Company:    domain,
+		Confidence: "test",
+		Model:      "test-model",
+	}, nil
+}
+
 func TestEnrichEmails(t *testing.T) {
-	rows, err := pipeline.EnrichEmails(context.Background(), []string{" alice@example.com ", "bob@error.test", ""}, enrich.Stub{}, pipeline.Options{})
+	rows, err := pipeline.EnrichEmails(context.Background(), []string{" alice@example.com ", "bob@error.test", ""}, testEnricher{}, pipeline.Options{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -39,11 +58,27 @@ func TestWriteCSV(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	out := buf.String()
-	if !strings.HasPrefix(out, "email,linkedin_url,company,title,description,confidence,status,error\n") {
-		t.Fatalf("unexpected header: %q", out)
+
+	cr := csv.NewReader(bytes.NewReader(buf.Bytes()))
+	records, err := cr.ReadAll()
+	if err != nil {
+		t.Fatalf("parse csv: %v", err)
 	}
-	if !strings.Contains(out, "\nalice@example.com,,,,,,"+"ok,\n") {
-		t.Fatalf("unexpected body: %q", out)
+	if len(records) != 2 {
+		t.Fatalf("expected header + 1 row, got %d records", len(records))
+	}
+
+	wantHeader := pipeline.Header()
+	if len(records[0]) != len(wantHeader) {
+		t.Fatalf("unexpected header len: got %d want %d", len(records[0]), len(wantHeader))
+	}
+	for i := range wantHeader {
+		if records[0][i] != wantHeader[i] {
+			t.Fatalf("header[%d]: want %q got %q", i, wantHeader[i], records[0][i])
+		}
+	}
+
+	if records[1][0] != "alice@example.com" || records[1][6] != "ok" {
+		t.Fatalf("unexpected row: %#v", records[1])
 	}
 }

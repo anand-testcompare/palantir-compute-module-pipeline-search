@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -19,6 +20,10 @@ type Row struct {
 	Confidence  string
 	Status      string
 	Error       string
+
+	Model            string
+	Sources          string
+	WebSearchQueries string
 }
 
 type Options struct {
@@ -40,6 +45,9 @@ func Header() []string {
 		"confidence",
 		"status",
 		"error",
+		"model",
+		"sources",
+		"web_search_queries",
 	}
 }
 
@@ -68,25 +76,46 @@ func EnrichEmails(ctx context.Context, emails []string, enricher enrich.Enricher
 
 	rows := make([]Row, 0, len(out))
 	for _, item := range out {
+		sources := jsonArrayOrEmpty(item.Result.Sources)
+		queries := jsonArrayOrEmpty(item.Result.WebSearchQueries)
+
 		if item.Err != nil {
 			rows = append(rows, Row{
-				Email:  strings.TrimSpace(item.Email),
-				Status: "error",
-				Error:  item.Err.Error(),
+				Email:            strings.TrimSpace(item.Email),
+				Status:           "error",
+				Error:            item.Err.Error(),
+				Model:            item.Result.Model,
+				Sources:          sources,
+				WebSearchQueries: queries,
 			})
 			continue
 		}
 
 		rows = append(rows, Row{
-			Email:       item.Email,
-			LinkedInURL: item.Result.LinkedInURL,
-			Company:     item.Result.Company,
-			Title:       item.Result.Title,
-			Description: item.Result.Description,
-			Confidence:  item.Result.Confidence,
-			Status:      "ok",
-			Error:       "",
+			Email:            item.Email,
+			LinkedInURL:      item.Result.LinkedInURL,
+			Company:          item.Result.Company,
+			Title:            item.Result.Title,
+			Description:      item.Result.Description,
+			Confidence:       item.Result.Confidence,
+			Status:           "ok",
+			Error:            "",
+			Model:            item.Result.Model,
+			Sources:          sources,
+			WebSearchQueries: queries,
 		})
 	}
 	return rows, nil
+}
+
+func jsonArrayOrEmpty(vals []string) string {
+	if len(vals) == 0 {
+		return ""
+	}
+	b, err := json.Marshal(vals)
+	if err != nil {
+		// Should not happen for []string, but keep output stable.
+		return ""
+	}
+	return string(b)
 }
