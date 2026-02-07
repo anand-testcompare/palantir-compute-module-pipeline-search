@@ -74,9 +74,18 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
           GEMINI_CAPTURE_AUDIT: "true"
+          GEMINI_E2E_ARTIFACT_DIR: "out/gemini-e2e"
         run: |
           set -euo pipefail
           go test -tags=gemini_e2e ./...
+
+      - name: Upload gemini e2e CSVs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gemini-e2e-csv
+          path: out/gemini-e2e/*.csv
+          if-no-files-found: warn
 
   e2e:
     runs-on: ubuntu-latest
@@ -96,14 +105,76 @@ jobs:
       - name: E2E (docker compose via venom)
         run: |
           mkdir -p out/venom
-          ./venom run test/venom/enricher_e2e.yml --format=xml --output-dir=out/venom
+          ./venom run test/venom/enricher_e2e.yml --format=xml --output-dir=out/venom --html-report
+
+      - name: Venom summary
+        if: always()
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import glob
+          import os
+          import xml.etree.ElementTree as ET
+          paths = sorted(glob.glob("out/venom/*.xml"))
+          if not paths:
+              raise SystemExit("no venom xml report found under out/venom/")
+          suites = []
+          for p in paths:
+              root = ET.parse(p).getroot()
+              for ts in root.findall(".//testsuite"):
+                  suites.append({
+                      "name": ts.attrib.get("name",""),
+                      "tests": int(ts.attrib.get("tests","0")),
+                      "failures": int(ts.attrib.get("failures","0")),
+                      "errors": int(ts.attrib.get("errors","0")),
+                      "time": float(ts.attrib.get("time","0") or 0),
+                  })
+          total = {
+              "tests": sum(s["tests"] for s in suites),
+              "failures": sum(s["failures"] for s in suites),
+              "errors": sum(s["errors"] for s in suites),
+              "time": sum(s["time"] for s in suites),
+          }
+          lines = []
+          lines.append(f"Venom suites: {len(suites)}")
+          lines.append(f"Total: tests={total['tests']} failures={total['failures']} errors={total['errors']} time={total['time']:.3f}s")
+          for s in suites:
+              lines.append(f"- {s['name']}: tests={s['tests']} failures={s['failures']} errors={s['errors']} time={s['time']:.3f}s")
+          summary = "\n".join(lines) + "\n"
+          os.makedirs("out/venom", exist_ok=True)
+          with open("out/venom/summary.txt", "w", encoding="utf-8") as f:
+              f.write(summary)
+          print(summary)
+          step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if step_summary:
+              with open(step_summary, "a", encoding="utf-8") as f:
+                  f.write("## Venom E2E Summary\n\n")
+                  f.write("```text\n")
+                  f.write(summary)
+                  f.write("```\n")
+          PY
 
       - name: Upload venom report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: venom-report
-          path: out/venom/*.xml
+          path: |
+            out/venom/*.xml
+            out/venom/test_results.html
+            out/venom/venom.log
+            out/venom/summary.txt
+          if-no-files-found: warn
+
+      - name: Upload e2e CSVs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-csv
+          path: |
+            test/fixtures/mock-foundry/inputs/*.csv
+            test/fixtures/expected_output.csv
+            test/artifacts/mock-foundry/uploads/**/*.csv
           if-no-files-found: warn
 
   docker:

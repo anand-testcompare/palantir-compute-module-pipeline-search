@@ -41,6 +41,12 @@ func TestRunLocal_RealGemini_EndToEnd(t *testing.T) {
 	}
 
 	dir := t.TempDir()
+	if artifactDir := os.Getenv("GEMINI_E2E_ARTIFACT_DIR"); artifactDir != "" {
+		if err := os.MkdirAll(artifactDir, 0755); err != nil {
+			t.Fatalf("create GEMINI_E2E_ARTIFACT_DIR: %v", err)
+		}
+		dir = artifactDir
+	}
 	inputPath := filepath.Join(dir, "emails.csv")
 	outputPath := filepath.Join(dir, "enriched.csv")
 
