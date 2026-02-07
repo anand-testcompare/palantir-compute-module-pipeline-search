@@ -1,6 +1,7 @@
 package mockfoundry
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Call records a request made to the mock service.
@@ -48,6 +50,10 @@ type txnState struct {
 	datasetRID string
 	branch     string
 	committed  bool
+
+	txType    string
+	createdAt time.Time
+	closedAt  *time.Time
 
 	// files are staged uploads for the transaction keyed by file path.
 	files map[string][]byte
@@ -109,6 +115,41 @@ func (s *Server) recordCall(r *http.Request) {
 	s.calls = append(s.calls, Call{Method: r.Method, Path: r.URL.Path})
 }
 
+type apiError struct {
+	ErrorCode       string         `json:"errorCode"`
+	ErrorName       string         `json:"errorName"`
+	ErrorInstanceID string         `json:"errorInstanceId"`
+	Parameters      map[string]any `json:"parameters,omitempty"`
+}
+
+func writeAPIError(w http.ResponseWriter, statusCode int, name string, code string, params map[string]any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	_ = json.NewEncoder(w).Encode(apiError{
+		ErrorCode:       code,
+		ErrorName:       name,
+		ErrorInstanceID: newErrorInstanceID(),
+		Parameters:      params,
+	})
+}
+
+func newErrorInstanceID() string {
+	// Foundry APIs follow Conjure error envelopes which include a stable instance id.
+	// Use UUIDv4 format. Cryptographic strength isn't important here, but uniqueness is.
+	var b [16]byte
+	_, _ = rand.Read(b[:])
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf(
+		"%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+		b[0], b[1], b[2], b[3],
+		b[4], b[5],
+		b[6], b[7],
+		b[8], b[9],
+		b[10], b[11], b[12], b[13], b[14], b[15],
+	)
+}
+
 func (s *Server) authorize(w http.ResponseWriter, r *http.Request) bool {
 	s.mu.Lock()
 	expected := s.expectedAuthorization
@@ -117,8 +158,13 @@ func (s *Server) authorize(w http.ResponseWriter, r *http.Request) bool {
 	if expected == "" {
 		return true
 	}
-	if r.Header.Get("Authorization") != expected {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	got := strings.TrimSpace(r.Header.Get("Authorization"))
+	if got == "" {
+		writeAPIError(w, http.StatusUnauthorized, "MissingCredentials", "UNAUTHORIZED", nil)
+		return false
+	}
+	if got != expected {
+		writeAPIError(w, http.StatusUnauthorized, "Default:Unauthorized", "UNAUTHORIZED", nil)
 		return false
 	}
 	return true
@@ -140,13 +186,15 @@ func (s *Server) handleV1Datasets(w http.ResponseWriter, r *http.Request) {
 	}
 	rid := parts[0]
 	if !isSafeToken(rid) {
-		http.Error(w, "invalid dataset rid", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "Conjure:InvalidArgument", "INVALID_ARGUMENT", map[string]any{
+			"datasetRid": rid,
+		})
 		return
 	}
 
 	if len(parts) == 2 && parts[1] == "readTable" {
 		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
 		s.serveReadTableCSV(w, r, rid)
@@ -155,17 +203,21 @@ func (s *Server) handleV1Datasets(w http.ResponseWriter, r *http.Request) {
 
 	if len(parts) >= 5 && parts[1] == "transactions" && parts[3] == "files" {
 		if r.Method != http.MethodPut {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
 		txnID := parts[2]
 		if !isSafeToken(txnID) {
-			http.Error(w, "invalid transaction id", http.StatusBadRequest)
+			writeAPIError(w, http.StatusBadRequest, "Conjure:InvalidArgument", "INVALID_ARGUMENT", map[string]any{
+				"transactionRid": txnID,
+			})
 			return
 		}
 		filePath := strings.Join(parts[4:], "/")
 		if !isSafeFilePath(filePath) {
-			http.Error(w, "invalid file path", http.StatusBadRequest)
+			writeAPIError(w, http.StatusBadRequest, "InvalidFilePath", "INVALID_ARGUMENT", map[string]any{
+				"filePath": filePath,
+			})
 			return
 		}
 		s.handleUpload(w, r, rid, txnID, filePath)
@@ -191,13 +243,15 @@ func (s *Server) handleV2Datasets(w http.ResponseWriter, r *http.Request) {
 	}
 	rid := parts[0]
 	if !isSafeToken(rid) {
-		http.Error(w, "invalid dataset rid", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "Conjure:InvalidArgument", "INVALID_ARGUMENT", map[string]any{
+			"datasetRid": rid,
+		})
 		return
 	}
 
 	if len(parts) == 2 && parts[1] == "transactions" {
 		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
 		s.handleCreateTransaction(w, r, rid)
@@ -206,12 +260,14 @@ func (s *Server) handleV2Datasets(w http.ResponseWriter, r *http.Request) {
 
 	if len(parts) == 4 && parts[1] == "transactions" && parts[3] == "commit" {
 		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
 		txnID := parts[2]
 		if !isSafeToken(txnID) {
-			http.Error(w, "invalid transaction id", http.StatusBadRequest)
+			writeAPIError(w, http.StatusBadRequest, "Conjure:InvalidArgument", "INVALID_ARGUMENT", map[string]any{
+				"transactionRid": txnID,
+			})
 			return
 		}
 		s.handleCommit(w, r, rid, txnID)
@@ -221,7 +277,13 @@ func (s *Server) handleV2Datasets(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
-func (s *Server) serveReadTableCSV(w http.ResponseWriter, _ *http.Request, datasetRID string) {
+func (s *Server) serveReadTableCSV(w http.ResponseWriter, r *http.Request, datasetRID string) {
+	branchID := strings.TrimSpace(r.URL.Query().Get("branchId"))
+	branchName := strings.TrimSpace(r.URL.Query().Get("branchName"))
+	if branchID == "" && branchName != "" {
+		branchID = branchName
+	}
+
 	// Prefer the last committed dataset head (API read-after-write), if present.
 	s.mu.Lock()
 	head, ok := s.heads[datasetRID]
@@ -248,7 +310,11 @@ func (s *Server) serveReadTableCSV(w http.ResponseWriter, _ *http.Request, datas
 	p := filepath.Join(s.inputDir, datasetRID+".csv")
 	b, err := os.ReadFile(p)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("read input csv: %v", err), http.StatusNotFound)
+		writeAPIError(w, http.StatusNotFound, "SchemaNotFound", "NOT_FOUND", map[string]any{
+			"datasetRid":     datasetRID,
+			"branchId":       branchID,
+			"transactionRid": "",
+		})
 		return
 	}
 	w.Header().Set("Content-Type", "text/csv")
@@ -256,11 +322,16 @@ func (s *Server) serveReadTableCSV(w http.ResponseWriter, _ *http.Request, datas
 }
 
 type createTxnReq struct {
-	Branch string `json:"branch"`
+	Branch          string `json:"branch,omitempty"`
+	TransactionType string `json:"transactionType,omitempty"`
 }
 
-type createTxnResp struct {
-	TransactionID string `json:"transactionId"`
+type transactionResp struct {
+	RID             string  `json:"rid"`
+	TransactionType string  `json:"transactionType"`
+	Status          string  `json:"status"`
+	CreatedTime     string  `json:"createdTime"`
+	ClosedTime      *string `json:"closedTime,omitempty"`
 }
 
 func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request, datasetRID string) {
@@ -273,17 +344,52 @@ func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request,
 	}
 
 	s.mu.Lock()
-	txnID := fmt.Sprintf("txn-%06d", s.nextTxn)
+	branch := strings.TrimSpace(r.URL.Query().Get("branchName"))
+	if branch == "" {
+		branch = strings.TrimSpace(r.URL.Query().Get("branchId"))
+	}
+	if branch == "" {
+		branch = strings.TrimSpace(req.Branch)
+	}
+	if branch == "" {
+		branch = "master"
+	}
+
+	for _, t := range s.txns {
+		if t.datasetRID == datasetRID && !t.committed && strings.TrimSpace(t.branch) == branch {
+			s.mu.Unlock()
+			writeAPIError(w, http.StatusConflict, "OpenTransactionAlreadyExists", "CONFLICT", map[string]any{
+				"datasetRid": datasetRID,
+				"branchName": branch,
+			})
+			return
+		}
+	}
+
+	txType := strings.TrimSpace(req.TransactionType)
+	if txType == "" {
+		txType = "SNAPSHOT"
+	}
+
+	createdAt := time.Now().UTC()
+	txnID := fmt.Sprintf("ri.foundry.main.transaction.txn-%06d", s.nextTxn)
 	s.nextTxn++
 	s.txns[txnID] = txnState{
 		datasetRID: datasetRID,
-		branch:     req.Branch,
+		branch:     branch,
+		txType:     txType,
+		createdAt:  createdAt,
 		files:      make(map[string][]byte),
 	}
 	s.mu.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(createTxnResp{TransactionID: txnID})
+	_ = json.NewEncoder(w).Encode(transactionResp{
+		RID:             txnID,
+		TransactionType: txType,
+		Status:          "OPEN",
+		CreatedTime:     createdAt.Format(time.RFC3339Nano),
+	})
 }
 
 func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request, datasetRID, txnID, filePath string) {
@@ -291,27 +397,40 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request, datasetRID
 	txn, ok := s.txns[txnID]
 	s.mu.Unlock()
 	if !ok || txn.datasetRID != datasetRID {
-		http.Error(w, "unknown transaction", http.StatusNotFound)
+		writeAPIError(w, http.StatusNotFound, "TransactionNotFound", "NOT_FOUND", map[string]any{
+			"datasetRid":     datasetRID,
+			"transactionRid": txnID,
+		})
 		return
 	}
 	if txn.committed {
-		http.Error(w, "transaction already committed", http.StatusConflict)
+		writeAPIError(w, http.StatusBadRequest, "TransactionNotOpen", "INVALID_ARGUMENT", map[string]any{
+			"datasetRid":        datasetRID,
+			"transactionRid":    txnID,
+			"transactionStatus": "COMMITTED",
+		})
 		return
 	}
 
 	b, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, "read body", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "Conjure:InvalidArgument", "INVALID_ARGUMENT", map[string]any{
+			"message": "read body",
+		})
 		return
 	}
 
 	dst := filepath.Join(s.uploadDir, datasetRID, txnID, filepath.FromSlash(filePath))
 	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
-		http.Error(w, "mkdir upload dir", http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, "Default:Internal", "INTERNAL", map[string]any{
+			"message": "mkdir upload dir",
+		})
 		return
 	}
 	if err := os.WriteFile(dst, b, 0644); err != nil {
-		http.Error(w, "write upload", http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, "Default:Internal", "INTERNAL", map[string]any{
+			"message": "write upload",
+		})
 		return
 	}
 
@@ -320,12 +439,19 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request, datasetRID
 	txn, ok = s.txns[txnID]
 	if !ok || txn.datasetRID != datasetRID {
 		s.mu.Unlock()
-		http.Error(w, "unknown transaction", http.StatusNotFound)
+		writeAPIError(w, http.StatusNotFound, "TransactionNotFound", "NOT_FOUND", map[string]any{
+			"datasetRid":     datasetRID,
+			"transactionRid": txnID,
+		})
 		return
 	}
 	if txn.committed {
 		s.mu.Unlock()
-		http.Error(w, "transaction already committed", http.StatusConflict)
+		writeAPIError(w, http.StatusBadRequest, "TransactionNotOpen", "INVALID_ARGUMENT", map[string]any{
+			"datasetRid":        datasetRID,
+			"transactionRid":    txnID,
+			"transactionStatus": "COMMITTED",
+		})
 		return
 	}
 	if txn.files == nil {
@@ -342,7 +468,14 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request, datasetRID
 	})
 	s.mu.Unlock()
 
-	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+	updated := time.Now().UTC().Format(time.RFC3339Nano)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"path":           filePath,
+		"transactionRid": txnID,
+		"sizeBytes":      fmt.Sprintf("%d", len(b)),
+		"updatedTime":    updated,
+	})
 }
 
 func (s *Server) handleCommit(w http.ResponseWriter, _ *http.Request, datasetRID string, txnID string) {
@@ -350,22 +483,37 @@ func (s *Server) handleCommit(w http.ResponseWriter, _ *http.Request, datasetRID
 	txn, ok := s.txns[txnID]
 	if !ok || txn.datasetRID != datasetRID {
 		s.mu.Unlock()
-		http.Error(w, "unknown transaction", http.StatusNotFound)
+		writeAPIError(w, http.StatusNotFound, "TransactionNotFound", "NOT_FOUND", map[string]any{
+			"datasetRid":     datasetRID,
+			"transactionRid": txnID,
+		})
 		return
 	}
 	if txn.committed {
 		s.mu.Unlock()
-		http.Error(w, "transaction already committed", http.StatusConflict)
+		writeAPIError(w, http.StatusBadRequest, "TransactionNotOpen", "INVALID_ARGUMENT", map[string]any{
+			"datasetRid":        datasetRID,
+			"transactionRid":    txnID,
+			"transactionStatus": "COMMITTED",
+		})
 		return
 	}
 	if len(txn.files) == 0 {
 		s.mu.Unlock()
-		http.Error(w, "transaction has no uploaded files", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "Conjure:InvalidArgument", "INVALID_ARGUMENT", map[string]any{
+			"message":        "transaction has no uploaded files",
+			"datasetRid":     datasetRID,
+			"transactionRid": txnID,
+		})
 		return
 	}
 	if len(txn.files) != 1 {
 		s.mu.Unlock()
-		http.Error(w, "transaction has multiple uploaded files", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "Conjure:InvalidArgument", "INVALID_ARGUMENT", map[string]any{
+			"message":        "transaction has multiple uploaded files",
+			"datasetRid":     datasetRID,
+			"transactionRid": txnID,
+		})
 		return
 	}
 
@@ -379,11 +527,15 @@ func (s *Server) handleCommit(w http.ResponseWriter, _ *http.Request, datasetRID
 	// Persist a "dataset head" so downstream consumers can read the committed state via readTable.
 	committedPath := s.committedTablePath(datasetRID)
 	if err := os.MkdirAll(filepath.Dir(committedPath), 0755); err != nil {
-		http.Error(w, "mkdir committed dir", http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, "Default:Internal", "INTERNAL", map[string]any{
+			"message": "mkdir committed dir",
+		})
 		return
 	}
 	if err := os.WriteFile(committedPath, head, 0644); err != nil {
-		http.Error(w, "write committed head", http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, "Default:Internal", "INTERNAL", map[string]any{
+			"message": "write committed head",
+		})
 		return
 	}
 
@@ -392,21 +544,42 @@ func (s *Server) handleCommit(w http.ResponseWriter, _ *http.Request, datasetRID
 	txn, ok = s.txns[txnID]
 	if !ok || txn.datasetRID != datasetRID {
 		s.mu.Unlock()
-		http.Error(w, "unknown transaction", http.StatusNotFound)
+		writeAPIError(w, http.StatusNotFound, "TransactionNotFound", "NOT_FOUND", map[string]any{
+			"datasetRid":     datasetRID,
+			"transactionRid": txnID,
+		})
 		return
 	}
 	if txn.committed {
 		s.mu.Unlock()
-		http.Error(w, "transaction already committed", http.StatusConflict)
+		writeAPIError(w, http.StatusBadRequest, "TransactionNotOpen", "INVALID_ARGUMENT", map[string]any{
+			"datasetRid":        datasetRID,
+			"transactionRid":    txnID,
+			"transactionStatus": "COMMITTED",
+		})
 		return
 	}
+	closedAt := time.Now().UTC()
 	txn.committed = true
+	txn.closedAt = &closedAt
 	s.txns[txnID] = txn
 	s.heads[datasetRID] = head
 	s.mu.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write([]byte(`{"status":"committed"}`))
+	createdTime := txn.createdAt.UTC().Format(time.RFC3339Nano)
+	var closedTime *string
+	if txn.closedAt != nil {
+		s := txn.closedAt.UTC().Format(time.RFC3339Nano)
+		closedTime = &s
+	}
+	_ = json.NewEncoder(w).Encode(transactionResp{
+		RID:             txnID,
+		TransactionType: txn.txType,
+		Status:          "COMMITTED",
+		CreatedTime:     createdTime,
+		ClosedTime:      closedTime,
+	})
 }
 
 func (s *Server) committedTablePath(datasetRID string) string {

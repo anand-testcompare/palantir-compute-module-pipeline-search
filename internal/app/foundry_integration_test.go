@@ -72,23 +72,31 @@ func TestRunFoundry_EndToEndAgainstMock(t *testing.T) {
 	if len(calls) != 4 {
 		t.Fatalf("expected 4 calls, got %d: %#v", len(calls), calls)
 	}
-	wantPaths := []string{
-		"/api/v1/datasets/" + inputRID + "/readTable",
-		"/api/v2/datasets/" + outputRID + "/transactions",
-		"/api/v1/datasets/" + outputRID + "/transactions/txn-000001/files/enriched.csv",
-		"/api/v2/datasets/" + outputRID + "/transactions/txn-000001/commit",
+	if calls[0].Path != "/api/v1/datasets/"+inputRID+"/readTable" {
+		t.Fatalf("call[0] path: want %q, got %q (all calls=%#v)", "/api/v1/datasets/"+inputRID+"/readTable", calls[0].Path, calls)
 	}
-	for i, wantPath := range wantPaths {
-		if calls[i].Path != wantPath {
-			t.Fatalf("call[%d] path: want %q, got %q (all calls=%#v)", i, wantPath, calls[i].Path, calls)
-		}
+	if calls[1].Path != "/api/v2/datasets/"+outputRID+"/transactions" {
+		t.Fatalf("call[1] path: want %q, got %q (all calls=%#v)", "/api/v2/datasets/"+outputRID+"/transactions", calls[1].Path, calls)
+	}
+
+	uploadPrefix := "/api/v1/datasets/" + outputRID + "/transactions/"
+	uploadSuffix := "/files/enriched.csv"
+	if !strings.HasPrefix(calls[2].Path, uploadPrefix) || !strings.HasSuffix(calls[2].Path, uploadSuffix) {
+		t.Fatalf("call[2] path: expected prefix %q and suffix %q, got %q (all calls=%#v)", uploadPrefix, uploadSuffix, calls[2].Path, calls)
+	}
+	txnID := strings.TrimSuffix(strings.TrimPrefix(calls[2].Path, uploadPrefix), uploadSuffix)
+	if strings.TrimSpace(txnID) == "" {
+		t.Fatalf("call[2] path: failed to extract transaction id from %q", calls[2].Path)
+	}
+	if calls[3].Path != "/api/v2/datasets/"+outputRID+"/transactions/"+txnID+"/commit" {
+		t.Fatalf("call[3] path: want %q, got %q (all calls=%#v)", "/api/v2/datasets/"+outputRID+"/transactions/"+txnID+"/commit", calls[3].Path, calls)
 	}
 
 	uploads := mock.Uploads()
 	if len(uploads) != 1 {
 		t.Fatalf("expected 1 upload, got %d: %#v", len(uploads), uploads)
 	}
-	if uploads[0].DatasetRID != outputRID || uploads[0].TxnID != "txn-000001" || uploads[0].FilePath != "enriched.csv" {
+	if uploads[0].DatasetRID != outputRID || uploads[0].TxnID != txnID || uploads[0].FilePath != "enriched.csv" {
 		t.Fatalf("unexpected upload metadata: %#v", uploads[0])
 	}
 

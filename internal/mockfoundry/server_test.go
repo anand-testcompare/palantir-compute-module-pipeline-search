@@ -79,8 +79,8 @@ func TestMockFoundry_RejectUploadDatasetMismatch(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected upload to fail for dataset mismatch")
 	}
-	if !strings.Contains(err.Error(), "unknown transaction") {
-		t.Fatalf("expected unknown transaction error, got: %v", err)
+	if !strings.Contains(err.Error(), `"errorName":"TransactionNotFound"`) {
+		t.Fatalf("expected TransactionNotFound error, got: %v", err)
 	}
 }
 
@@ -111,8 +111,8 @@ func TestMockFoundry_RejectCommitWithoutUpload(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected commit to fail with no uploaded files")
 	}
-	if !strings.Contains(err.Error(), "no uploaded files") {
-		t.Fatalf("expected no uploaded files error, got: %v", err)
+	if !strings.Contains(err.Error(), `"errorName":"Conjure:InvalidArgument"`) || !strings.Contains(err.Error(), "no uploaded files") {
+		t.Fatalf("expected InvalidArgument error, got: %v", err)
 	}
 }
 
@@ -150,7 +150,7 @@ func TestMockFoundry_RejectCommitMultipleFiles(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected commit to fail with multiple uploaded files")
 	}
-	if !strings.Contains(err.Error(), "multiple uploaded files") {
-		t.Fatalf("expected multiple uploaded files error, got: %v", err)
+	if !strings.Contains(err.Error(), `"errorName":"Conjure:InvalidArgument"`) || !strings.Contains(err.Error(), "multiple uploaded files") {
+		t.Fatalf("expected InvalidArgument error, got: %v", err)
 	}
 }

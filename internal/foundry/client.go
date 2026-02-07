@@ -46,8 +46,9 @@ func NewClient(foundryURL, token string) (*Client, error) {
 func (c *Client) ReadTableCSV(ctx context.Context, datasetRID, branch string) ([]byte, error) {
 	q := url.Values{}
 	if strings.TrimSpace(branch) != "" {
-		q.Set("branch", branch)
+		q.Set("branchId", branch)
 	}
+	q.Set("format", "CSV")
 
 	u := c.resolve(fmt.Sprintf("/api/v1/datasets/%s/readTable", url.PathEscape(datasetRID)))
 	u.RawQuery = q.Encode()
@@ -78,22 +79,31 @@ func (c *Client) ReadTableCSV(ctx context.Context, datasetRID, branch string) ([
 }
 
 type createTxnRequest struct {
-	Branch string `json:"branch,omitempty"`
+	TransactionType string `json:"transactionType"`
 }
 
 type createTxnResponse struct {
+	// Foundry returns a Transaction object with a transaction RID.
+	RID string `json:"rid"`
+
+	// Legacy: some mocks may return transactionId.
 	TransactionID string `json:"transactionId"`
 }
 
 // CreateTransaction creates a dataset transaction and returns the transaction id.
 func (c *Client) CreateTransaction(ctx context.Context, datasetRID, branch string) (string, error) {
-	body := createTxnRequest{Branch: branch}
+	body := createTxnRequest{TransactionType: "SNAPSHOT"}
 	b, err := json.Marshal(body)
 	if err != nil {
 		return "", err
 	}
 
 	u := c.resolve(fmt.Sprintf("/api/v2/datasets/%s/transactions", url.PathEscape(datasetRID)))
+	q := url.Values{}
+	if strings.TrimSpace(branch) != "" {
+		q.Set("branchName", branch)
+	}
+	u.RawQuery = q.Encode()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(b))
 	if err != nil {
 		return "", err
@@ -122,10 +132,15 @@ func (c *Client) CreateTransaction(ctx context.Context, datasetRID, branch strin
 	if err := json.Unmarshal(rb, &out); err != nil {
 		return "", fmt.Errorf("parse create transaction response: %w", err)
 	}
-	if strings.TrimSpace(out.TransactionID) == "" {
-		return "", fmt.Errorf("create transaction response missing transactionId")
+
+	txnID := strings.TrimSpace(out.TransactionID)
+	if txnID == "" {
+		txnID = strings.TrimSpace(out.RID)
 	}
-	return out.TransactionID, nil
+	if txnID == "" {
+		return "", fmt.Errorf("create transaction response missing rid")
+	}
+	return txnID, nil
 }
 
 // UploadFile uploads file bytes to a transaction path.
