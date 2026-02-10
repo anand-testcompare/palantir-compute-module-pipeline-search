@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"strings"
@@ -38,8 +39,14 @@ type computeModuleClientConfig struct {
 }
 
 func loadComputeModuleClientConfigFromEnv() (computeModuleClientConfig, bool, error) {
-	getJob := strings.TrimSpace(os.Getenv("GET_JOB_URI"))
-	postRes := strings.TrimSpace(os.Getenv("POST_RESULT_URI"))
+	getJob, err := normalizeLocalhostURI(strings.TrimSpace(os.Getenv("GET_JOB_URI")))
+	if err != nil {
+		return computeModuleClientConfig{}, false, fmt.Errorf("invalid GET_JOB_URI: %w", err)
+	}
+	postRes, err := normalizeLocalhostURI(strings.TrimSpace(os.Getenv("POST_RESULT_URI")))
+	if err != nil {
+		return computeModuleClientConfig{}, false, fmt.Errorf("invalid POST_RESULT_URI: %w", err)
+	}
 	if getJob == "" || postRes == "" {
 		return computeModuleClientConfig{}, false, nil
 	}
@@ -63,6 +70,30 @@ func loadComputeModuleClientConfigFromEnv() (computeModuleClientConfig, bool, er
 		ModuleAuthToken: modTok,
 		DefaultCAPath:   caPath,
 	}, true, nil
+}
+
+func normalizeLocalhostURI(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", err
+	}
+	// Foundry commonly injects localhost URIs. Go may resolve "localhost" to ::1 first,
+	// but the runtime sidecar often binds only to IPv4 loopback. Force IPv4 to avoid
+	// flapping with connection refused.
+	host := strings.TrimSpace(u.Hostname())
+	if host == "localhost" || host == "::1" {
+		port := strings.TrimSpace(u.Port())
+		if port != "" {
+			u.Host = "127.0.0.1:" + port
+		} else {
+			u.Host = "127.0.0.1"
+		}
+	}
+	return u.String(), nil
 }
 
 func runComputeModuleClientLoop(ctx context.Context, cfg computeModuleClientConfig, handleJob func(context.Context, computeModuleJobV1) ([]byte, error)) error {

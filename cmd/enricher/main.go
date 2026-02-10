@@ -149,10 +149,12 @@ func runFoundry(ctx context.Context, args []string) int {
 	// satisfy the runtime health expectations and to avoid leaving internal jobs un-acked.
 	cmCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	keepAlive := false
 	if ccfg, ok, err := loadComputeModuleClientConfigFromEnv(); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "compute module client config error: %s\n", util.RedactSecrets(err.Error()))
 		return 2
 	} else if ok {
+		keepAlive = true
 		go func() {
 			_ = runComputeModuleClientLoop(cmCtx, ccfg, func(context.Context, computeModuleJobV1) ([]byte, error) {
 				// We don't expose any interactive functions; acknowledge any internal jobs so they don't block routing.
@@ -182,6 +184,14 @@ func runFoundry(ctx context.Context, args []string) int {
 	}, enricher); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "foundry run failed: %s\n", util.RedactSecrets(err.Error()))
 		return 1
+	}
+
+	// In Foundry Compute Modules, the container is expected to be long-running. If we exit after
+	// producing output, the module will be restarted and the pipeline may re-run, duplicating stream
+	// records. Keep the process alive when Foundry has injected the internal module endpoints.
+	if keepAlive {
+		_, _ = fmt.Fprintln(os.Stdout, "foundry run complete; keeping module alive")
+		select {}
 	}
 	return 0
 }
