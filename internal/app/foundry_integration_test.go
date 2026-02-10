@@ -56,8 +56,11 @@ func TestRunFoundry_EndToEndAgainstMock(t *testing.T) {
 	defer ts.Close()
 
 	env := foundry.Env{
-		FoundryURL: ts.URL,
-		Token:      "dummy-token",
+		Services: foundry.Services{
+			APIGateway:  ts.URL + "/api",
+			StreamProxy: ts.URL + "/stream-proxy/api",
+		},
+		Token: "dummy-token",
 		Aliases: map[string]foundry.DatasetRef{
 			"input":  {RID: inputRID, Branch: "master"},
 			"output": {RID: outputRID, Branch: "master"},
@@ -69,33 +72,36 @@ func TestRunFoundry_EndToEndAgainstMock(t *testing.T) {
 	}
 
 	calls := mock.Calls()
-	if len(calls) != 5 {
-		t.Fatalf("expected 5 calls, got %d: %#v", len(calls), calls)
+	if len(calls) != 6 {
+		t.Fatalf("expected 6 calls, got %d: %#v", len(calls), calls)
 	}
-	if calls[0].Path != "/api/v2/datasets/"+inputRID+"/readTable" {
-		t.Fatalf("call[0] path: want %q, got %q (all calls=%#v)", "/api/v2/datasets/"+inputRID+"/readTable", calls[0].Path, calls)
+	if calls[0].Path != "/api/v2/datasets/"+inputRID+"/branches/master" {
+		t.Fatalf("call[0] path: want %q, got %q (all calls=%#v)", "/api/v2/datasets/"+inputRID+"/branches/master", calls[0].Path, calls)
+	}
+	if calls[1].Path != "/api/v2/datasets/"+inputRID+"/readTable" {
+		t.Fatalf("call[1] path: want %q, got %q (all calls=%#v)", "/api/v2/datasets/"+inputRID+"/readTable", calls[1].Path, calls)
 	}
 	wantProbePath := "/stream-proxy/api/streams/" + outputRID + "/branches/master/records"
-	if calls[1].Path != wantProbePath {
-		t.Fatalf("call[1] path: want %q, got %q (all calls=%#v)", wantProbePath, calls[1].Path, calls)
+	if calls[2].Path != wantProbePath {
+		t.Fatalf("call[2] path: want %q, got %q (all calls=%#v)", wantProbePath, calls[2].Path, calls)
 	}
-	if calls[2].Path != "/api/v2/datasets/"+outputRID+"/transactions" {
-		t.Fatalf("call[2] path: want %q, got %q (all calls=%#v)", "/api/v2/datasets/"+outputRID+"/transactions", calls[2].Path, calls)
+	if calls[3].Path != "/api/v2/datasets/"+outputRID+"/transactions" {
+		t.Fatalf("call[3] path: want %q, got %q (all calls=%#v)", "/api/v2/datasets/"+outputRID+"/transactions", calls[3].Path, calls)
 	}
 
 	wantUploadPath := "/api/v2/datasets/" + outputRID + "/files/enriched.csv/upload"
-	if calls[3].Path != wantUploadPath {
-		t.Fatalf("call[3] path: want %q, got %q (all calls=%#v)", wantUploadPath, calls[3].Path, calls)
+	if calls[4].Path != wantUploadPath {
+		t.Fatalf("call[4] path: want %q, got %q (all calls=%#v)", wantUploadPath, calls[4].Path, calls)
 	}
 
 	commitPrefix := "/api/v2/datasets/" + outputRID + "/transactions/"
 	commitSuffix := "/commit"
-	if !strings.HasPrefix(calls[4].Path, commitPrefix) || !strings.HasSuffix(calls[4].Path, commitSuffix) {
-		t.Fatalf("call[4] path: expected prefix %q and suffix %q, got %q (all calls=%#v)", commitPrefix, commitSuffix, calls[4].Path, calls)
+	if !strings.HasPrefix(calls[5].Path, commitPrefix) || !strings.HasSuffix(calls[5].Path, commitSuffix) {
+		t.Fatalf("call[5] path: expected prefix %q and suffix %q, got %q (all calls=%#v)", commitPrefix, commitSuffix, calls[5].Path, calls)
 	}
-	txnID := strings.TrimSuffix(strings.TrimPrefix(calls[4].Path, commitPrefix), commitSuffix)
+	txnID := strings.TrimSuffix(strings.TrimPrefix(calls[5].Path, commitPrefix), commitSuffix)
 	if strings.TrimSpace(txnID) == "" {
-		t.Fatalf("call[4] path: failed to extract transaction id from %q", calls[4].Path)
+		t.Fatalf("call[5] path: failed to extract transaction id from %q", calls[5].Path)
 	}
 
 	uploads := mock.Uploads()
@@ -135,7 +141,7 @@ func TestRunFoundry_EndToEndAgainstMock(t *testing.T) {
 	}
 
 	// The committed dataset can be retrieved via readTable (read-after-write semantics).
-	client, err := foundry.NewClient(ts.URL, env.Token)
+	client, err := foundry.NewClient(env.Services.APIGateway, env.Services.StreamProxy, env.Token, env.DefaultCAPath)
 	if err != nil {
 		t.Fatalf("new foundry client: %v", err)
 	}
@@ -149,11 +155,14 @@ func TestRunFoundry_EndToEndAgainstMock(t *testing.T) {
 
 	// Verify the extra readTable call was recorded.
 	calls = mock.Calls()
-	if len(calls) != 6 {
-		t.Fatalf("expected 6 calls after readTable, got %d: %#v", len(calls), calls)
+	if len(calls) != 8 {
+		t.Fatalf("expected 8 calls after readTable, got %d: %#v", len(calls), calls)
 	}
-	if calls[5].Path != "/api/v2/datasets/"+outputRID+"/readTable" {
-		t.Fatalf("call[5] path: want %q, got %q (all calls=%#v)", "/api/v2/datasets/"+outputRID+"/readTable", calls[5].Path, calls)
+	if calls[6].Path != "/api/v2/datasets/"+outputRID+"/branches/master" {
+		t.Fatalf("call[6] path: want %q, got %q (all calls=%#v)", "/api/v2/datasets/"+outputRID+"/branches/master", calls[6].Path, calls)
+	}
+	if calls[7].Path != "/api/v2/datasets/"+outputRID+"/readTable" {
+		t.Fatalf("call[7] path: want %q, got %q (all calls=%#v)", "/api/v2/datasets/"+outputRID+"/readTable", calls[7].Path, calls)
 	}
 }
 
@@ -180,7 +189,7 @@ func TestRunFoundry_UsesExistingOpenTransactionWhenCreateConflicts(t *testing.T)
 	defer ts.Close()
 
 	// Simulate pipeline mode: Foundry build pre-creates an OPEN output transaction.
-	client, err := foundry.NewClient(ts.URL, "dummy-token")
+	client, err := foundry.NewClient(ts.URL+"/api", ts.URL+"/stream-proxy/api", "dummy-token", "")
 	if err != nil {
 		t.Fatalf("new foundry client: %v", err)
 	}
@@ -191,8 +200,11 @@ func TestRunFoundry_UsesExistingOpenTransactionWhenCreateConflicts(t *testing.T)
 	beforeCalls := len(mock.Calls())
 
 	env := foundry.Env{
-		FoundryURL: ts.URL,
-		Token:      "dummy-token",
+		Services: foundry.Services{
+			APIGateway:  ts.URL + "/api",
+			StreamProxy: ts.URL + "/stream-proxy/api",
+		},
+		Token: "dummy-token",
 		Aliases: map[string]foundry.DatasetRef{
 			"input":  {RID: inputRID, Branch: "master"},
 			"output": {RID: outputRID, Branch: "master"},
@@ -204,26 +216,29 @@ func TestRunFoundry_UsesExistingOpenTransactionWhenCreateConflicts(t *testing.T)
 	}
 
 	calls := mock.Calls()[beforeCalls:]
-	if len(calls) != 5 {
-		t.Fatalf("expected 5 calls, got %d: %#v", len(calls), calls)
+	if len(calls) != 6 {
+		t.Fatalf("expected 6 calls, got %d: %#v", len(calls), calls)
 	}
-	if calls[0].Method != "GET" || calls[0].Path != "/api/v2/datasets/"+inputRID+"/readTable" {
+	if calls[0].Method != "GET" || calls[0].Path != "/api/v2/datasets/"+inputRID+"/branches/master" {
 		t.Fatalf("call[0] mismatch: %#v (all calls=%#v)", calls[0], calls)
 	}
-	wantProbePath := "/stream-proxy/api/streams/" + outputRID + "/branches/master/records"
-	if calls[1].Method != "GET" || calls[1].Path != wantProbePath {
+	if calls[1].Method != "GET" || calls[1].Path != "/api/v2/datasets/"+inputRID+"/readTable" {
 		t.Fatalf("call[1] mismatch: %#v (all calls=%#v)", calls[1], calls)
 	}
-	if calls[2].Method != "POST" || calls[2].Path != "/api/v2/datasets/"+outputRID+"/transactions" {
+	wantProbePath := "/stream-proxy/api/streams/" + outputRID + "/branches/master/records"
+	if calls[2].Method != "GET" || calls[2].Path != wantProbePath {
 		t.Fatalf("call[2] mismatch: %#v (all calls=%#v)", calls[2], calls)
 	}
-	if calls[3].Method != "GET" || calls[3].Path != "/api/v2/datasets/"+outputRID+"/transactions" {
+	if calls[3].Method != "POST" || calls[3].Path != "/api/v2/datasets/"+outputRID+"/transactions" {
 		t.Fatalf("call[3] mismatch: %#v (all calls=%#v)", calls[3], calls)
+	}
+	if calls[4].Method != "GET" || calls[4].Path != "/api/v2/datasets/"+outputRID+"/transactions" {
+		t.Fatalf("call[4] mismatch: %#v (all calls=%#v)", calls[4], calls)
 	}
 
 	wantUploadPath := "/api/v2/datasets/" + outputRID + "/files/enriched.csv/upload"
-	if calls[4].Method != "POST" || calls[4].Path != wantUploadPath {
-		t.Fatalf("call[4] mismatch: %#v (all calls=%#v)", calls[4], calls)
+	if calls[5].Method != "POST" || calls[5].Path != wantUploadPath {
+		t.Fatalf("call[5] mismatch: %#v (all calls=%#v)", calls[5], calls)
 	}
 
 	uploads := mock.Uploads()
@@ -259,8 +274,11 @@ func TestRunFoundry_WritesToStreamProxyWhenOutputIsStream(t *testing.T) {
 	defer ts.Close()
 
 	env := foundry.Env{
-		FoundryURL: ts.URL,
-		Token:      "dummy-token",
+		Services: foundry.Services{
+			APIGateway:  ts.URL + "/api",
+			StreamProxy: ts.URL + "/stream-proxy/api",
+		},
+		Token: "dummy-token",
 		Aliases: map[string]foundry.DatasetRef{
 			"input":  {RID: inputRID, Branch: "master"},
 			"output": {RID: outputRID, Branch: "master"},
@@ -272,22 +290,25 @@ func TestRunFoundry_WritesToStreamProxyWhenOutputIsStream(t *testing.T) {
 	}
 
 	calls := mock.Calls()
-	if len(calls) != 4 {
-		t.Fatalf("expected 4 calls, got %d: %#v", len(calls), calls)
+	if len(calls) != 5 {
+		t.Fatalf("expected 5 calls, got %d: %#v", len(calls), calls)
 	}
-	if calls[0].Method != "GET" || calls[0].Path != "/api/v2/datasets/"+inputRID+"/readTable" {
+	if calls[0].Method != "GET" || calls[0].Path != "/api/v2/datasets/"+inputRID+"/branches/master" {
 		t.Fatalf("call[0] mismatch: %#v (all calls=%#v)", calls[0], calls)
 	}
-	wantProbePath := "/stream-proxy/api/streams/" + outputRID + "/branches/master/records"
-	if calls[1].Method != "GET" || calls[1].Path != wantProbePath {
+	if calls[1].Method != "GET" || calls[1].Path != "/api/v2/datasets/"+inputRID+"/readTable" {
 		t.Fatalf("call[1] mismatch: %#v (all calls=%#v)", calls[1], calls)
 	}
-	wantPublishPath := "/stream-proxy/api/streams/" + outputRID + "/branches/master/jsonRecord"
-	if calls[2].Method != "POST" || calls[2].Path != wantPublishPath {
+	wantProbePath := "/stream-proxy/api/streams/" + outputRID + "/branches/master/records"
+	if calls[2].Method != "GET" || calls[2].Path != wantProbePath {
 		t.Fatalf("call[2] mismatch: %#v (all calls=%#v)", calls[2], calls)
 	}
+	wantPublishPath := "/stream-proxy/api/streams/" + outputRID + "/branches/master/jsonRecord"
 	if calls[3].Method != "POST" || calls[3].Path != wantPublishPath {
 		t.Fatalf("call[3] mismatch: %#v (all calls=%#v)", calls[3], calls)
+	}
+	if calls[4].Method != "POST" || calls[4].Path != wantPublishPath {
+		t.Fatalf("call[4] mismatch: %#v (all calls=%#v)", calls[4], calls)
 	}
 
 	recs := mock.StreamRecords(outputRID, "master")

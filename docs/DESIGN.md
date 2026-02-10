@@ -2,11 +2,13 @@
 
 ## Overview
 
-This project is a pipeline-mode Foundry Compute Module (Go) that runs as a one-shot batch container:
+This project is a pipeline-mode Foundry Compute Module (Go) that runs its pipeline logic once per module start:
 
 1. Read input dataset rows (email addresses)
 2. Enrich each email via Gemini (search grounding + URL context + structured output)
-3. Write an output dataset file into the output dataset transaction (opened by Foundry build, or created in local harness) and commit
+3. Write either:
+   - a snapshot dataset output (output transaction + upload + optional commit), or
+   - a stream output (stream-proxy JSON record publish)
 
 This repo should also support a local, non-Foundry run mode for personal use and faster iteration:
 
@@ -25,12 +27,15 @@ Pipeline mode (this project):
 
 - One-shot batch program executed by a pipeline build
 - Reads file-based env vars (`BUILD2_TOKEN`, `RESOURCE_ALIAS_MAP`)
-- Exits `0` on success, non-zero on failure
+- Exits `0` on success, non-zero on failure in local/test harnesses
+- In Foundry, the compute module container is typically expected to be long-running; this repo keeps the process alive after completing a run when compute-module internal endpoints are present to avoid restart/rerun loops
 
 Function mode (not this project):
 
 - Long-lived server that polls a Jobs API and posts results
 - Different env vars and contract (module auth token, CA path, job URIs)
+
+Note: some Foundry stacks inject internal module endpoints (e.g. `GET_JOB_URI`, `POST_RESULT_URI`) even for pipeline-style modules. This repo uses those endpoints only to keep the module responsive (acknowledge internal jobs); it does not expose interactive query handlers.
 
 ## Runtime Contract
 
@@ -247,11 +252,12 @@ Dockerfile.mock-foundry
 
 ## Container Image
 
-Prefer a static binary in a minimal base image (e.g. distroless).
+Prefer a static binary in a minimal base image.
 
 Watch-outs:
 
 - Ensure CA certificates are present in the runtime image so TLS calls to Foundry and Gemini succeed
+- Foundry's default stdout log capture path may require `/bin/sh` and `tee`; distroless images can make logs and some probes harder to debug
 - Keep the image amd64 unless you know Foundry will run arm64
 
 ## Publishing / Deployment

@@ -83,6 +83,31 @@ In addition, if your module calls Foundry REST APIs (this repo does), you should
 (the same host used by `FOUNDRY_URL`) via a Source/network policy as well. This does not mean "leaving Foundry"; it is simply
 allowing the container to make HTTPS requests to the stack's API gateway.
 
+Practical pattern:
+
+- Create a REST API Source pointing at your Foundry stack hostname (e.g. `<stack>.palantirfoundry.com:443`)
+- Enable code import for compute modules on that Source
+- Attach that Source to the compute module alongside the Gemini Source
+
+Note: for Sources used in code alongside Foundry inputs/outputs, you may need to enable Source exports and allow the required markings/org.
+
+### Compute Module Probes + Logs
+
+Two common pitfalls when iterating on compute modules:
+
+- Stdout log capture: Foundry's stdout log capture can require `/bin/sh` and `tee`. Very minimal images (e.g. distroless) may run fine but produce no logs.
+- Readiness probe: avoid probes like `echo` (not present in distroless). Prefer an exec probe that calls your binary directly, for example `['/enricher','--help']`.
+
+### Streaming Output Idempotency
+
+Streaming outputs are append-only. If the compute module is restarted/redeployed, the container may re-run the pipeline and republish the same records.
+
+Options:
+
+- Write to a snapshot dataset instead of a stream for one-shot jobs.
+- Add idempotency/deduplication in your stream sink (e.g. publish a stable key or filter against a checkpoint/state dataset).
+- Keep the compute module process alive after a successful run so the platform doesn't restart it and duplicate writes.
+
 ## Image Publishing
 
 There are typically two publishing targets:

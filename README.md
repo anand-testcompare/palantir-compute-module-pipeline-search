@@ -6,7 +6,13 @@ Pipeline-mode Foundry Compute Module (Go) that:
 2. Enriches each email via Gemini (Google Search grounding + URL context + structured output)
 3. Writes an output dataset
 
-This is a one-shot batch container triggered by Foundry pipeline builds (not a long-lived service).
+This runs as a Foundry Compute Module and executes a "pipeline" job that:
+
+- Reads an input dataset of email addresses
+- Enriches each email via Gemini
+- Writes enriched rows to either a snapshot dataset (transactions) or a streaming dataset (stream-proxy)
+
+In Foundry, compute modules are deployed as long-running containers. This repo runs its pipeline logic once per module start and then keeps the process alive so the platform doesn't restart it (which would re-run the pipeline and can duplicate stream outputs).
 
 It should also be runnable locally (without Foundry) against a local input file for faster iteration and personal one-off batches.
 
@@ -42,7 +48,10 @@ export GEMINI_MODEL=gemini-2.5-flash
 ./test/scripts/venom.sh run test/venom/enricher_e2e.yml -v
 ```
 
+Note: CI jobs that require Gemini secrets will be skipped automatically if `GEMINI_API_KEY` / `GEMINI_MODEL` GitHub secrets are not configured.
+
 ## Docs
 
 - `docs/DESIGN.md`: architecture, interfaces, local testing approach
-- `docs/RELEASE.md`: Foundry/pipeline configuration and publishing steps (incl. egress policy)
+- `docs/RELEASE.md`: Foundry configuration steps (Sources, egress, probes) and publishing guidance
+- `docs/TROUBLESHOOTING.md`: common deployment failures and how to diagnose
