@@ -529,12 +529,6 @@ func (c *Client) resolveStream(relPath string) *url.URL {
 	return c.streamBaseURL.ResolveReference(rel)
 }
 
-// resolve exists for backward compatibility in call sites that already build API-gateway-relative paths.
-// Prefer resolveAPI/resolveStream.
-func (c *Client) resolve(p string) *url.URL {
-	return c.resolveAPI(p)
-}
-
 func escapeURLPath(p string) string {
 	// Preserve "/" separators while escaping each segment.
 	cleaned := path.Clean("/" + p)

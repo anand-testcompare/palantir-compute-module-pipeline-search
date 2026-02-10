@@ -46,31 +46,32 @@ jobs:
   gemini-e2e:
     runs-on: ubuntu-latest
     needs: verify
-    if: ${{ secrets.GEMINI_API_KEY != '' && secrets.GEMINI_MODEL != '' }}
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Require Gemini secrets
+      - name: Check Gemini secrets
+        id: gemini_secrets
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
         run: |
           set -euo pipefail
-          if [[ -z "${GEMINI_API_KEY}" ]]; then
-            echo "missing required secret: GEMINI_API_KEY" >&2
-            exit 1
+          enabled="true"
+          if [[ -z "${GEMINI_API_KEY}" || -z "${GEMINI_MODEL}" ]]; then
+            enabled="false"
+            echo "Gemini secrets not configured; skipping gemini-e2e job." >&2
           fi
-          if [[ -z "${GEMINI_MODEL}" ]]; then
-            echo "missing required secret: GEMINI_MODEL" >&2
-            exit 1
-          fi
+          echo "enabled=${enabled}" >> "${GITHUB_OUTPUT}"
+
+      - uses: actions/checkout@v4
+        if: ${{ steps.gemini_secrets.outputs.enabled == 'true' }}
+
+      - uses: actions/setup-go@v5
+        if: ${{ steps.gemini_secrets.outputs.enabled == 'true' }}
+        with:
+          go-version-file: go.mod
+          cache: true
 
       - name: E2E (real Gemini)
+        if: ${{ steps.gemini_secrets.outputs.enabled == 'true' }}
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
@@ -83,7 +84,7 @@ jobs:
           go test -tags=gemini_e2e ./...
 
       - name: Upload gemini e2e CSVs
-        if: always()
+        if: ${{ always() && steps.gemini_secrets.outputs.enabled == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: gemini-e2e-csv
@@ -93,11 +94,26 @@ jobs:
   docker-compose-e2e:
     runs-on: ubuntu-latest
     needs: verify
-    if: ${{ secrets.GEMINI_API_KEY != '' && secrets.GEMINI_MODEL != '' }}
     steps:
+      - name: Check Gemini secrets
+        id: gemini_secrets
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
+        run: |
+          set -euo pipefail
+          enabled="true"
+          if [[ -z "${GEMINI_API_KEY}" || -z "${GEMINI_MODEL}" ]]; then
+            enabled="false"
+            echo "Gemini secrets not configured; skipping docker-compose-e2e job." >&2
+          fi
+          echo "enabled=${enabled}" >> "${GITHUB_OUTPUT}"
+
       - uses: actions/checkout@v4
+        if: ${{ steps.gemini_secrets.outputs.enabled == 'true' }}
 
       - name: Install Venom
+        if: ${{ steps.gemini_secrets.outputs.enabled == 'true' }}
         run: |
           set -euo pipefail
           VENOM_VERSION="v1.3.0"
@@ -107,22 +123,8 @@ jobs:
           install -m 0755 /tmp/venom /usr/local/bin/venom
           venom version
 
-      - name: Require Gemini secrets
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
-        run: |
-          set -euo pipefail
-          if [[ -z "${GEMINI_API_KEY}" ]]; then
-            echo "missing required secret: GEMINI_API_KEY" >&2
-            exit 1
-          fi
-          if [[ -z "${GEMINI_MODEL}" ]]; then
-            echo "missing required secret: GEMINI_MODEL" >&2
-            exit 1
-          fi
-
       - name: E2E (docker compose + venom, real Gemini)
+        if: ${{ steps.gemini_secrets.outputs.enabled == 'true' }}
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
@@ -133,13 +135,13 @@ jobs:
           venom run test/venom/enricher_e2e.yml --output-dir out/venom --format=xml --html-report -v
 
       - name: Docker Compose Down (Always)
-        if: always()
+        if: ${{ always() && steps.gemini_secrets.outputs.enabled == 'true' }}
         run: |
           set -euo pipefail
           docker compose -f docker-compose.test.yml down -v --remove-orphans || true
 
       - name: Upload docker compose e2e artifacts
-        if: always()
+        if: ${{ always() && steps.gemini_secrets.outputs.enabled == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: docker-compose-e2e
