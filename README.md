@@ -48,6 +48,8 @@ export GEMINI_MODEL=gemini-2.5-flash
 ./test/scripts/venom.sh run test/venom/enricher_e2e.yml -v
 ```
 
+Note: CI jobs that require Gemini secrets will be skipped automatically if `GEMINI_API_KEY` / `GEMINI_MODEL` GitHub secrets are not configured.
+
 ## Docs
 
 - `docs/DESIGN.md`: architecture, interfaces, local testing approach
