@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -63,6 +64,8 @@ func RunFoundry(
 	opts pipeline.Options,
 	enricher enrich.Enricher,
 ) error {
+	logger := log.New(os.Stdout, "", log.LstdFlags)
+
 	inputRef, ok := env.Aliases[inputAlias]
 	if !ok {
 		return fmt.Errorf("missing alias %q in RESOURCE_ALIAS_MAP", inputAlias)
@@ -71,6 +74,27 @@ func RunFoundry(
 	if !ok {
 		return fmt.Errorf("missing alias %q in RESOURCE_ALIAS_MAP", outputAlias)
 	}
+	inputBranch := strings.TrimSpace(inputRef.Branch)
+	if inputBranch == "" {
+		inputBranch = "master"
+	}
+	outputBranch := strings.TrimSpace(outputRef.Branch)
+	if outputBranch == "" {
+		outputBranch = "master"
+	}
+	logger.Printf(
+		"foundry run start: input=%s@%s output=%s@%s writeMode=%s workers=%d maxRetries=%d timeout=%s rateLimitRPS=%g failFast=%t",
+		inputRef.RID,
+		inputBranch,
+		outputRef.RID,
+		outputBranch,
+		outputWriteMode,
+		opts.Workers,
+		opts.MaxRetries,
+		opts.RequestTimeout,
+		opts.RateLimitRPS,
+		opts.FailFast,
+	)
 	if outputFilename == "" {
 		outputFilename = "enriched.csv"
 	}
@@ -97,11 +121,13 @@ func RunFoundry(
 	if err != nil {
 		return err
 	}
+	logger.Printf("loaded %d emails from input dataset", len(emails))
 
 	rows, err := pipeline.EnrichEmails(ctx, emails, enricher, opts)
 	if err != nil {
 		return err
 	}
+	logger.Printf("enrichment complete: produced %d rows", len(rows))
 
 	// Decide whether the output alias refers to a stream (stream-proxy) or a snapshot dataset (transactions + upload).
 	isStream := false
@@ -132,8 +158,12 @@ func RunFoundry(
 		if branch == "" {
 			branch = "master"
 		}
+		logger.Printf("publishing %d rows to stream-proxy (%s@%s)", len(rows), outputRef.RID, branch)
 
-		for _, r := range rows {
+		for i, r := range rows {
+			if i == 0 || (i+1)%100 == 0 || i == len(rows)-1 {
+				logger.Printf("stream publish progress: %d/%d", i+1, len(rows))
+			}
 			// Use null for empty values so nullable string columns behave like "missing" rather than "".
 			rec := map[string]any{
 				"email": r.Email,
@@ -195,6 +225,7 @@ func RunFoundry(
 				return err
 			}
 		}
+		logger.Printf("foundry run complete: stream publish finished")
 		return nil
 	}
 
@@ -246,6 +277,7 @@ func RunFoundry(
 			return err
 		}
 	}
+	logger.Printf("foundry run complete: dataset output finished")
 	return nil
 }
 
