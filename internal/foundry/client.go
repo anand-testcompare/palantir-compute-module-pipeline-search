@@ -3,11 +3,14 @@ package foundry
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 	"strconv"
 	"strings"
@@ -18,9 +21,10 @@ import (
 //
 // Note: This is intentionally minimal to support local harness + smoke tests.
 type Client struct {
-	baseURL *url.URL
-	token   string
-	http    *http.Client
+	apiBaseURL    *url.URL
+	streamBaseURL *url.URL
+	token         string
+	http          *http.Client
 }
 
 type branchResponse struct {
@@ -41,8 +45,8 @@ func (c *Client) GetBranchTransactionRID(ctx context.Context, datasetRID, branch
 		branch = "master"
 	}
 
-	u := c.resolve(fmt.Sprintf(
-		"/api/v2/datasets/%s/branches/%s",
+	u := c.resolveAPI(fmt.Sprintf(
+		"v2/datasets/%s/branches/%s",
 		url.PathEscape(datasetRID),
 		url.PathEscape(branch),
 	))
@@ -77,33 +81,73 @@ func (c *Client) GetBranchTransactionRID(ctx context.Context, datasetRID, branch
 	return strings.TrimSpace(out.TransactionRID), nil
 }
 
-// NewClient constructs a client for the Foundry base URL (for example, "https://<stack>.palantirfoundry.com").
-func NewClient(foundryURL, token string) (*Client, error) {
-	raw := strings.TrimSpace(foundryURL)
-	if raw == "" {
-		return nil, fmt.Errorf("Foundry URL is required")
+// NewClient constructs a client for Foundry service base URLs.
+//
+// apiGatewayURL should look like "https://<stack>.palantirfoundry.com/api".
+// streamProxyURL should look like "https://<stack>.palantirfoundry.com/stream-proxy/api".
+//
+// defaultCAPath is optional and, when provided, will be used as the trust store for TLS.
+func NewClient(apiGatewayURL, streamProxyURL, token, defaultCAPath string) (*Client, error) {
+	apiBase, err := parseBaseURL(apiGatewayURL, "api gateway")
+	if err != nil {
+		return nil, err
 	}
-	// Foundry docs and examples often treat the stack value as a hostname.
-	// Accept either a full URL or a hostname and default to https.
+	streamBase, err := parseBaseURL(streamProxyURL, "stream-proxy")
+	if err != nil {
+		return nil, err
+	}
+
+	hc, err := newHTTPClient(defaultCAPath)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Client{
+		apiBaseURL:    apiBase,
+		streamBaseURL: streamBase,
+		token:         strings.TrimSpace(token),
+		http:          hc,
+	}, nil
+}
+
+func parseBaseURL(raw string, name string) (*url.URL, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, fmt.Errorf("%s base URL is required", name)
+	}
 	if !strings.Contains(raw, "://") {
 		raw = "https://" + raw
 	}
-
 	u, err := url.Parse(raw)
 	if err != nil {
-		return nil, fmt.Errorf("parse Foundry URL: %w", err)
+		return nil, fmt.Errorf("parse %s base URL: %w", name, err)
 	}
 	if u.Scheme == "" || u.Host == "" {
-		return nil, fmt.Errorf("Foundry URL must include a host (got %q)", foundryURL)
+		return nil, fmt.Errorf("%s base URL must include a host (got %q)", name, raw)
 	}
-	u.Path = strings.TrimRight(u.Path, "/")
+	// Ensure the base path ends with a slash so ResolveReference treats it as a directory.
+	u.Path = strings.TrimRight(u.Path, "/") + "/"
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u, nil
+}
 
-	return &Client{
-		baseURL: u,
-		token:   strings.TrimSpace(token),
-		http: &http.Client{
-			Timeout: 60 * time.Second,
-		},
+func newHTTPClient(defaultCAPath string) (*http.Client, error) {
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	if strings.TrimSpace(defaultCAPath) != "" {
+		b, err := os.ReadFile(strings.TrimSpace(defaultCAPath))
+		if err != nil {
+			return nil, fmt.Errorf("read DEFAULT_CA_PATH file: %w", err)
+		}
+		pool := x509.NewCertPool()
+		if ok := pool.AppendCertsFromPEM(b); !ok {
+			return nil, fmt.Errorf("parse DEFAULT_CA_PATH PEM: no certs found")
+		}
+		tr.TLSClientConfig = &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
+	}
+	return &http.Client{
+		Transport: tr,
+		Timeout:   60 * time.Second,
 	}, nil
 }
 
@@ -130,7 +174,7 @@ func (c *Client) ReadTableCSV(ctx context.Context, datasetRID, branch string) ([
 	}
 	q.Set("format", "CSV")
 
-	u := c.resolve(fmt.Sprintf("/api/v2/datasets/%s/readTable", url.PathEscape(datasetRID)))
+	u := c.resolveAPI(fmt.Sprintf("v2/datasets/%s/readTable", url.PathEscape(datasetRID)))
 	u.RawQuery = q.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
@@ -175,8 +219,8 @@ func (c *Client) ProbeStream(ctx context.Context, streamRID, branch string) (boo
 		branch = "master"
 	}
 
-	u := c.resolve(fmt.Sprintf(
-		"/stream-proxy/api/streams/%s/branches/%s/records",
+	u := c.resolveStream(fmt.Sprintf(
+		"streams/%s/branches/%s/records",
 		url.PathEscape(streamRID),
 		url.PathEscape(branch),
 	))
@@ -223,8 +267,8 @@ func (c *Client) PublishStreamJSONRecord(ctx context.Context, streamRID, branch 
 		return err
 	}
 
-	u := c.resolve(fmt.Sprintf(
-		"/stream-proxy/api/streams/%s/branches/%s/jsonRecord",
+	u := c.resolveStream(fmt.Sprintf(
+		"streams/%s/branches/%s/jsonRecord",
 		url.PathEscape(streamRID),
 		url.PathEscape(branch),
 	))
@@ -274,7 +318,7 @@ func (c *Client) CreateTransaction(ctx context.Context, datasetRID, branch strin
 		return "", err
 	}
 
-	u := c.resolve(fmt.Sprintf("/api/v2/datasets/%s/transactions", url.PathEscape(datasetRID)))
+	u := c.resolveAPI(fmt.Sprintf("v2/datasets/%s/transactions", url.PathEscape(datasetRID)))
 	q := url.Values{}
 	if strings.TrimSpace(branch) != "" {
 		q.Set("branchName", branch)
@@ -336,7 +380,7 @@ type listTxnsResponse struct {
 //
 // Note: This endpoint is documented as preview and requires `preview=true`.
 func (c *Client) ListTransactions(ctx context.Context, datasetRID string, pageSize int, pageToken string) ([]Transaction, string, error) {
-	u := c.resolve(fmt.Sprintf("/api/v2/datasets/%s/transactions", url.PathEscape(datasetRID)))
+	u := c.resolveAPI(fmt.Sprintf("v2/datasets/%s/transactions", url.PathEscape(datasetRID)))
 	q := url.Values{}
 	// Required by Foundry docs for this (preview) endpoint.
 	q.Set("preview", "true")
@@ -404,8 +448,8 @@ func (c *Client) FindLatestOpenTransaction(ctx context.Context, datasetRID strin
 // UploadFile uploads file bytes to a transaction path.
 func (c *Client) UploadFile(ctx context.Context, datasetRID, txnID, filePath string, contentType string, b []byte) error {
 	escaped := escapeURLPath(filePath)
-	u := c.resolve(fmt.Sprintf(
-		"/api/v2/datasets/%s/files/%s/upload",
+	u := c.resolveAPI(fmt.Sprintf(
+		"v2/datasets/%s/files/%s/upload",
 		url.PathEscape(datasetRID),
 		escaped,
 	))
@@ -443,8 +487,8 @@ func (c *Client) UploadFile(ctx context.Context, datasetRID, txnID, filePath str
 
 // CommitTransaction commits a transaction.
 func (c *Client) CommitTransaction(ctx context.Context, datasetRID, txnID string) error {
-	u := c.resolve(fmt.Sprintf(
-		"/api/v2/datasets/%s/transactions/%s/commit",
+	u := c.resolveAPI(fmt.Sprintf(
+		"v2/datasets/%s/transactions/%s/commit",
 		url.PathEscape(datasetRID),
 		url.PathEscape(txnID),
 	))
@@ -473,10 +517,22 @@ func (c *Client) CommitTransaction(ctx context.Context, datasetRID, txnID string
 	return nil
 }
 
+func (c *Client) resolveAPI(relPath string) *url.URL {
+	relPath = strings.TrimPrefix(relPath, "/")
+	rel := &url.URL{Path: relPath}
+	return c.apiBaseURL.ResolveReference(rel)
+}
+
+func (c *Client) resolveStream(relPath string) *url.URL {
+	relPath = strings.TrimPrefix(relPath, "/")
+	rel := &url.URL{Path: relPath}
+	return c.streamBaseURL.ResolveReference(rel)
+}
+
+// resolve exists for backward compatibility in call sites that already build API-gateway-relative paths.
+// Prefer resolveAPI/resolveStream.
 func (c *Client) resolve(p string) *url.URL {
-	// url.ResolveReference drops query/fragment and handles any base path.
-	rel := &url.URL{Path: p}
-	return c.baseURL.ResolveReference(rel)
+	return c.resolveAPI(p)
 }
 
 func escapeURLPath(p string) string {

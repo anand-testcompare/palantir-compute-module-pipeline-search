@@ -79,7 +79,7 @@ func RunFoundry(
 		mode = "auto"
 	}
 
-	client, err := foundry.NewClient(env.FoundryURL, env.Token)
+	client, err := foundry.NewClient(env.Services.APIGateway, env.Services.StreamProxy, env.Token, env.DefaultCAPath)
 	if err != nil {
 		return err
 	}

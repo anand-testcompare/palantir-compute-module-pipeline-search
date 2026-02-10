@@ -56,8 +56,11 @@ func TestRunFoundry_EndToEndAgainstMock(t *testing.T) {
 	defer ts.Close()
 
 	env := foundry.Env{
-		FoundryURL: ts.URL,
-		Token:      "dummy-token",
+		Services: foundry.Services{
+			APIGateway:  ts.URL + "/api",
+			StreamProxy: ts.URL + "/stream-proxy/api",
+		},
+		Token: "dummy-token",
 		Aliases: map[string]foundry.DatasetRef{
 			"input":  {RID: inputRID, Branch: "master"},
 			"output": {RID: outputRID, Branch: "master"},
@@ -138,7 +141,7 @@ func TestRunFoundry_EndToEndAgainstMock(t *testing.T) {
 	}
 
 	// The committed dataset can be retrieved via readTable (read-after-write semantics).
-	client, err := foundry.NewClient(ts.URL, env.Token)
+	client, err := foundry.NewClient(env.Services.APIGateway, env.Services.StreamProxy, env.Token, env.DefaultCAPath)
 	if err != nil {
 		t.Fatalf("new foundry client: %v", err)
 	}
@@ -186,7 +189,7 @@ func TestRunFoundry_UsesExistingOpenTransactionWhenCreateConflicts(t *testing.T)
 	defer ts.Close()
 
 	// Simulate pipeline mode: Foundry build pre-creates an OPEN output transaction.
-	client, err := foundry.NewClient(ts.URL, "dummy-token")
+	client, err := foundry.NewClient(ts.URL+"/api", ts.URL+"/stream-proxy/api", "dummy-token", "")
 	if err != nil {
 		t.Fatalf("new foundry client: %v", err)
 	}
@@ -197,8 +200,11 @@ func TestRunFoundry_UsesExistingOpenTransactionWhenCreateConflicts(t *testing.T)
 	beforeCalls := len(mock.Calls())
 
 	env := foundry.Env{
-		FoundryURL: ts.URL,
-		Token:      "dummy-token",
+		Services: foundry.Services{
+			APIGateway:  ts.URL + "/api",
+			StreamProxy: ts.URL + "/stream-proxy/api",
+		},
+		Token: "dummy-token",
 		Aliases: map[string]foundry.DatasetRef{
 			"input":  {RID: inputRID, Branch: "master"},
 			"output": {RID: outputRID, Branch: "master"},
@@ -268,8 +274,11 @@ func TestRunFoundry_WritesToStreamProxyWhenOutputIsStream(t *testing.T) {
 	defer ts.Close()
 
 	env := foundry.Env{
-		FoundryURL: ts.URL,
-		Token:      "dummy-token",
+		Services: foundry.Services{
+			APIGateway:  ts.URL + "/api",
+			StreamProxy: ts.URL + "/stream-proxy/api",
+		},
+		Token: "dummy-token",
 		Aliases: map[string]foundry.DatasetRef{
 			"input":  {RID: inputRID, Branch: "master"},
 			"output": {RID: outputRID, Branch: "master"},

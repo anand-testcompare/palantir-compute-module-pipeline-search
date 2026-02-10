@@ -21,7 +21,7 @@ func TestMockFoundry_CommitUpdatesReadTable(t *testing.T) {
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
-	client, err := foundry.NewClient(ts.URL, "dummy-token")
+	client, err := foundry.NewClient(ts.URL+"/api", ts.URL+"/stream-proxy/api", "dummy-token", "")
 	if err != nil {
 		t.Fatalf("new foundry client: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestMockFoundry_RejectUploadDatasetMismatch(t *testing.T) {
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
-	client, err := foundry.NewClient(ts.URL, "dummy-token")
+	client, err := foundry.NewClient(ts.URL+"/api", ts.URL+"/stream-proxy/api", "dummy-token", "")
 	if err != nil {
 		t.Fatalf("new foundry client: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestMockFoundry_RejectCommitWithoutUpload(t *testing.T) {
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
-	client, err := foundry.NewClient(ts.URL, "dummy-token")
+	client, err := foundry.NewClient(ts.URL+"/api", ts.URL+"/stream-proxy/api", "dummy-token", "")
 	if err != nil {
 		t.Fatalf("new foundry client: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestMockFoundry_RejectCommitMultipleFiles(t *testing.T) {
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
-	client, err := foundry.NewClient(ts.URL, "dummy-token")
+	client, err := foundry.NewClient(ts.URL+"/api", ts.URL+"/stream-proxy/api", "dummy-token", "")
 	if err != nil {
 		t.Fatalf("new foundry client: %v", err)
 	}

@@ -15,22 +15,26 @@ type DatasetRef struct {
 
 // Env is the runtime configuration needed to run in Foundry pipeline mode.
 type Env struct {
-	FoundryURL string
-	Token      string
-	Aliases    map[string]DatasetRef
+	// Services contains the discovered Foundry service base URLs to call.
+	Services Services
+	// DefaultCAPath is the path to a PEM bundle that should be trusted for TLS.
+	// In Foundry compute modules, this is provided via DEFAULT_CA_PATH.
+	DefaultCAPath string
+	Token         string
+	Aliases       map[string]DatasetRef
 }
 
 // LoadEnv reads required pipeline-mode env vars.
 //
 // Required:
-//   - FOUNDRY_URL
 //   - BUILD2_TOKEN (file path)
 //   - RESOURCE_ALIAS_MAP (file path)
 func LoadEnv() (Env, error) {
-	foundryURL := strings.TrimSpace(os.Getenv("FOUNDRY_URL"))
-	if foundryURL == "" {
-		return Env{}, fmt.Errorf("FOUNDRY_URL is required")
+	services, err := loadServicesFromEnv()
+	if err != nil {
+		return Env{}, err
 	}
+	defaultCAPath := strings.TrimSpace(os.Getenv("DEFAULT_CA_PATH"))
 
 	token, err := readFileEnv("BUILD2_TOKEN")
 	if err != nil {
@@ -43,9 +47,31 @@ func LoadEnv() (Env, error) {
 	}
 
 	return Env{
-		FoundryURL: foundryURL,
-		Token:      token,
-		Aliases:    aliases,
+		Services:      services,
+		DefaultCAPath: defaultCAPath,
+		Token:         token,
+		Aliases:       aliases,
+	}, nil
+}
+
+func loadServicesFromEnv() (Services, error) {
+	if p := strings.TrimSpace(os.Getenv("FOUNDRY_SERVICE_DISCOVERY_V2")); p != "" {
+		return loadServicesFromDiscoveryFile(p)
+	}
+
+	// Back-compat: allow explicit FOUNDRY_URL when service discovery is not present.
+	foundryURL := strings.TrimSpace(os.Getenv("FOUNDRY_URL"))
+	if foundryURL == "" {
+		return Services{}, fmt.Errorf("FOUNDRY_SERVICE_DISCOVERY_V2 or FOUNDRY_URL is required")
+	}
+	if !strings.Contains(foundryURL, "://") {
+		foundryURL = "https://" + foundryURL
+	}
+	foundryURL = strings.TrimRight(foundryURL, "/")
+
+	return Services{
+		APIGateway:  foundryURL + "/api",
+		StreamProxy: foundryURL + "/stream-proxy/api",
 	}, nil
 }
 
