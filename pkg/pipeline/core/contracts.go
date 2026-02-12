@@ -1,6 +1,8 @@
 package core
 
-import "context"
+import (
+	"context"
+)
 
 // InputAdapter loads input records for pipeline processing.
 type InputAdapter[In any] interface {

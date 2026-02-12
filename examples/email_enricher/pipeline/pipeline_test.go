@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/palantir/palantir-compute-module-pipeline-search/internal/enrich"
-	"github.com/palantir/palantir-compute-module-pipeline-search/internal/pipeline"
+	"github.com/palantir/palantir-compute-module-pipeline-search/examples/email_enricher/enrich"
+	"github.com/palantir/palantir-compute-module-pipeline-search/examples/email_enricher/pipeline"
 )
 
 type testEnricher struct{}

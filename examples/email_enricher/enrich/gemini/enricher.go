@@ -8,7 +8,7 @@ import (
 	"net"
 	"strings"
 
-	"github.com/palantir/palantir-compute-module-pipeline-search/internal/enrich"
+	"github.com/palantir/palantir-compute-module-pipeline-search/examples/email_enricher/enrich"
 	"google.golang.org/genai"
 )
 

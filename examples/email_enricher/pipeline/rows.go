@@ -3,12 +3,13 @@ package pipeline
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
-	"github.com/palantir/palantir-compute-module-pipeline-search/internal/enrich"
-	"github.com/palantir/palantir-compute-module-pipeline-search/internal/enrich/worker"
-	"github.com/palantir/palantir-compute-module-pipeline-search/internal/util"
+	"github.com/palantir/palantir-compute-module-pipeline-search/examples/email_enricher/enrich"
+	"github.com/palantir/palantir-compute-module-pipeline-search/pkg/pipeline/redact"
+	"github.com/palantir/palantir-compute-module-pipeline-search/pkg/pipeline/worker"
 )
 
 // Row is the stable output schema contract for the MVP.
@@ -61,7 +62,15 @@ func EnrichEmails(ctx context.Context, emails []string, enricher enrich.Enricher
 		policy = worker.FailurePolicyFailFast
 	}
 
-	out, err := worker.EnrichAll(ctx, emails, enricher, worker.Options{
+	processor := func(reqCtx context.Context, raw string) (enrich.Result, error) {
+		email := strings.TrimSpace(raw)
+		if email == "" {
+			return enrich.Result{}, errors.New("empty email")
+		}
+		return enricher.Enrich(reqCtx, email)
+	}
+
+	out, err := worker.ProcessAll(ctx, emails, processor, worker.Options{
 		Workers:           opts.Workers,
 		MaxRetries:        opts.MaxRetries,
 		RequestTimeout:    opts.RequestTimeout,
@@ -77,15 +86,15 @@ func EnrichEmails(ctx context.Context, emails []string, enricher enrich.Enricher
 
 	rows := make([]Row, 0, len(out))
 	for _, item := range out {
-		sources := jsonArrayOrEmpty(item.Result.Sources)
-		queries := jsonArrayOrEmpty(item.Result.WebSearchQueries)
+		sources := jsonArrayOrEmpty(item.Output.Sources)
+		queries := jsonArrayOrEmpty(item.Output.WebSearchQueries)
 
 		if item.Err != nil {
 			rows = append(rows, Row{
-				Email:            strings.TrimSpace(item.Email),
+				Email:            strings.TrimSpace(item.Input),
 				Status:           "error",
-				Error:            util.RedactSecrets(item.Err.Error()),
-				Model:            item.Result.Model,
+				Error:            redact.Secrets(item.Err.Error()),
+				Model:            item.Output.Model,
 				Sources:          sources,
 				WebSearchQueries: queries,
 			})
@@ -93,15 +102,15 @@ func EnrichEmails(ctx context.Context, emails []string, enricher enrich.Enricher
 		}
 
 		rows = append(rows, Row{
-			Email:            item.Email,
-			LinkedInURL:      item.Result.LinkedInURL,
-			Company:          item.Result.Company,
-			Title:            item.Result.Title,
-			Description:      item.Result.Description,
-			Confidence:       item.Result.Confidence,
+			Email:            strings.TrimSpace(item.Input),
+			LinkedInURL:      item.Output.LinkedInURL,
+			Company:          item.Output.Company,
+			Title:            item.Output.Title,
+			Description:      item.Output.Description,
+			Confidence:       item.Output.Confidence,
 			Status:           "ok",
 			Error:            "",
-			Model:            item.Result.Model,
+			Model:            item.Output.Model,
 			Sources:          sources,
 			WebSearchQueries: queries,
 		})

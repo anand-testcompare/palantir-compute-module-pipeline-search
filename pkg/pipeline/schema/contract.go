@@ -1,6 +1,8 @@
 package schema
 
-import "strings"
+import (
+	"strings"
+)
 
 // DatasetMode captures behavior-relevant output semantics.
 type DatasetMode string

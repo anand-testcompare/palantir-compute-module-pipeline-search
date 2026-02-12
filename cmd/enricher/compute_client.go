@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/palantir/palantir-compute-module-pipeline-search/internal/util"
+	"github.com/palantir/palantir-compute-module-pipeline-search/pkg/pipeline/redact"
 )
 
 type computeModuleJobEnvelope struct {
@@ -114,7 +114,7 @@ func runComputeModuleClientLoop(ctx context.Context, cfg computeModuleClientConf
 
 		job, ok, err := getNextJob(ctx, hc, cfg.GetJobURI, cfg.ModuleAuthToken)
 		if err != nil {
-			logger.Printf("compute module client: get job failed: %s", util.RedactSecrets(err.Error()))
+			logger.Printf("compute module client: get job failed: %s", redact.Secrets(err.Error()))
 			time.Sleep(sleep)
 			if sleep < 5*time.Second {
 				sleep *= 2
@@ -137,17 +137,17 @@ func runComputeModuleClientLoop(ctx context.Context, cfg computeModuleClientConf
 		logger.Printf("compute module client: received jobId=%s queryType=%s", jobID, strings.TrimSpace(job.QueryType))
 		result, jobErr := handleJob(ctx, job)
 		if jobErr != nil {
-			logger.Printf("compute module client: jobId=%s failed: %s", jobID, util.RedactSecrets(jobErr.Error()))
+			logger.Printf("compute module client: jobId=%s failed: %s", jobID, redact.Secrets(jobErr.Error()))
 			// Still post a result so the platform can record failure.
 			if len(result) == 0 {
-				result = []byte(util.RedactSecrets(jobErr.Error()))
+				result = []byte(redact.Secrets(jobErr.Error()))
 			}
 		} else if len(result) == 0 {
 			result = []byte("ok")
 		}
 
 		if err := postResult(ctx, hc, cfg.PostResultURI, cfg.ModuleAuthToken, jobID, result); err != nil {
-			logger.Printf("compute module client: post result failed for jobId=%s: %s", jobID, util.RedactSecrets(err.Error()))
+			logger.Printf("compute module client: post result failed for jobId=%s: %s", jobID, redact.Secrets(err.Error()))
 			// Retry a few times before moving on.
 			for i := 0; i < 5; i++ {
 				time.Sleep(time.Duration(i+1) * time.Second)

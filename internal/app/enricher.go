@@ -13,10 +13,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/palantir/palantir-compute-module-pipeline-search/internal/enrich"
+	"github.com/palantir/palantir-compute-module-pipeline-search/examples/email_enricher/enrich"
+	"github.com/palantir/palantir-compute-module-pipeline-search/examples/email_enricher/pipeline"
 	"github.com/palantir/palantir-compute-module-pipeline-search/pkg/foundry"
-	"github.com/palantir/palantir-compute-module-pipeline-search/internal/pipeline"
-	"github.com/palantir/palantir-compute-module-pipeline-search/internal/util"
+	localio "github.com/palantir/palantir-compute-module-pipeline-search/pkg/pipeline/io/local"
 )
 
 // RunLocal reads a local input CSV of emails and writes a local output CSV of enriched rows.
@@ -29,7 +29,7 @@ func RunLocal(ctx context.Context, inputPath, outputPath string, opts pipeline.O
 		_ = inF.Close()
 	}()
 
-	emails, err := util.ReadEmailsCSV(inF)
+	emails, err := localio.ReadEmailsCSV(inF)
 	if err != nil {
 		return err
 	}
@@ -117,7 +117,7 @@ func RunFoundry(
 	if err != nil {
 		return err
 	}
-	emails, err := util.ReadEmailsCSV(bytes.NewReader(inputBytes))
+	emails, err := localio.ReadEmailsCSV(bytes.NewReader(inputBytes))
 	if err != nil {
 		return err
 	}
