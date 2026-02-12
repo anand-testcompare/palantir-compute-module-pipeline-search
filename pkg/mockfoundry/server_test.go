@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/palantir/palantir-compute-module-pipeline-search/pkg/foundry"
-	"github.com/palantir/palantir-compute-module-pipeline-search/internal/mockfoundry"
+	"github.com/palantir/palantir-compute-module-pipeline-search/pkg/mockfoundry"
 )
 
 func TestMockFoundry_CommitUpdatesReadTable(t *testing.T) {
