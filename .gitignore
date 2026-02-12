@@ -56,3 +56,6 @@ venom.log
 
 # Local scratch data (do not commit)
 data-tmp/
+
+# Local parquet docs snapshot
+docs.parquet
