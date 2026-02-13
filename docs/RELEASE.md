@@ -110,17 +110,26 @@ Options:
 
 ## Image Publishing
 
-There are typically two publishing targets:
+This repo publishes compute-module images to Foundry via `.github/workflows/publish-foundry.yml`.
 
-1. GitHub artifacts (CI visibility and reproducibility)
-2. Your org's Palantir registry / artifact store used by Foundry compute modules
+### GitHub Secrets Required
 
-Define and document the publishing mechanism used in your environment (exact commands and auth differ by org).
+- `FOUNDRY_ARTIFACT_REPOSITORY_RID`: artifact repository RID used as the `docker login` username.
+- `FOUNDRY_TOKEN`: token used as the `docker login` password.
+- `FOUNDRY_REGISTRY_HOST`: Foundry container registry host (example: `<your-stack>-container-registry.palantirfoundry.com`).
+- `FOUNDRY_DOCKER_IMAGE_NAME`: image name in the registry (example: `email-enrichment-google`).
+- `FOUNDRY_URL`: stack URL (kept for related workflows and docs consistency).
 
-Recommended end state:
+### Tagging Behavior
 
-- GitHub Actions builds the Docker image and produces a versioned artifact
-- A gated workflow publishes the same image tag to the Palantir registry consumed by Foundry
+- On `main` pushes: publish `sha-<short-gitsha>` and moving tag `main`.
+- On release tags `v*`: publish both `sha-<short-gitsha>` and `<tag>`.
+- On pull requests: build only (no push) to validate Docker buildability.
+
+### Permissions
+
+For push to succeed, the CI identity backing `FOUNDRY_TOKEN` needs **Edit** on the target Artifact repository.
+`View` alone can pull but cannot push.
 
 ## Rollout Checklist
 
