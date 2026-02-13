@@ -125,6 +125,8 @@ run_dev_capture() {
       PATH="${ws}/bin:${PATH}" \
       DEV_TEST_DOCKER_LOG="${ws}/docker.log" \
       DEV_TEST_AUTOFIX_RECOVER="${DEV_TEST_AUTOFIX_RECOVER:-0}" \
+      GEMINI_API_KEY="test-key" \
+      GEMINI_MODEL="test-model" \
       ./dev "$@" 2>&1
   )"
   status=$?

@@ -85,3 +85,21 @@ Fix:
 - If ownership is broken, run the remediation command printed by preflight (example):
   - `docker run --rm -v "<repo>/.local:/work" alpine:3 sh -c "chown -R <uid>:<gid> /work"`
 - Run `./dev clean` to reset compose resources and clear uploads while preserving inputs.
+
+## E2E Output Rows Show `status=error`
+
+Symptoms:
+
+- `./dev test` fails with output containing `,error,`.
+- Committed CSV includes Gemini errors such as invalid API key.
+
+Why it happens:
+
+- Real Gemini calls are required for `./dev test`.
+- Invalid or missing `GEMINI_API_KEY` / `GEMINI_MODEL` causes per-row failures.
+
+Fix:
+
+- Ensure `GEMINI_API_KEY` is valid and has access to the selected model.
+- Ensure `GEMINI_MODEL` is set (for example `gemini-2.5-flash`).
+- Re-run `./dev test` and verify rows contain `,ok,,` and no `,error,`.

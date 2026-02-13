@@ -45,12 +45,10 @@ Verify (CI parity + external consumer checks):
 ./dev verify
 ```
 
-Targeted tests:
+Real e2e test run (Gemini + Foundry-emulated docker-compose):
 
 ```bash
-./dev test --scope unit
-./dev test --scope integration
-./dev test --scope e2e
+./dev test
 ```
 
 Preflight diagnostics:
@@ -74,6 +72,12 @@ Run Foundry-like flow locally (mock dataset API + real Gemini + real container):
 ./dev run foundry-emulated
 ```
 
+Run a long-lived local dev loop (watches input CSV and reruns automatically):
+
+```bash
+./dev run foundry-emulated --watch
+```
+
 `./dev run foundry-emulated` now runs a preflight checklist before compose starts:
 - verifies local fixture/config paths
 - verifies local harness directories are writable
@@ -92,7 +96,7 @@ Run CI-style docker-compose E2E (fixed fixtures + output validation):
 ```bash
 export GEMINI_API_KEY=...
 export GEMINI_MODEL=gemini-2.5-flash
-./dev e2e -v
+./dev test -v
 ```
 
 Note: CI jobs that require Gemini secrets are skipped automatically if `GEMINI_API_KEY` / `GEMINI_MODEL` GitHub secrets are not configured.

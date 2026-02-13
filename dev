@@ -16,9 +16,9 @@ dev: local developer entrypoint
 
 Usage:
   ./dev verify
-  ./dev test [--scope unit|integration|e2e] [-- <go test args...>]
+  ./dev test [venom args...]
   ./dev run local -- <enricher local args...>
-  ./dev run foundry-emulated
+  ./dev run foundry-emulated [--watch]
   ./dev clean
   ./dev e2e
   ./dev doctor [--json]
@@ -254,48 +254,135 @@ doctor_json() {
   fi
 }
 
-run_test() {
-  local scope="unit"
-  local extra=()
+require_gemini_env() {
+  local missing=0
+  if [[ -z "${GEMINI_API_KEY:-}" ]]; then
+    echo "missing env: GEMINI_API_KEY" >&2
+    missing=1
+  fi
+  if [[ -z "${GEMINI_MODEL:-}" ]]; then
+    echo "missing env: GEMINI_MODEL" >&2
+    missing=1
+  fi
+  if [[ "${missing}" -ne 0 ]]; then
+    return 1
+  fi
+}
 
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --scope)
-        scope="$2"
-        shift 2
-        ;;
-      --)
-        shift
-        extra=("$@")
-        break
-        ;;
-      *)
-        echo "unknown test arg: $1" >&2
-        usage
-        return 2
-        ;;
-    esac
+run_e2e() {
+  require_gemini_env
+  mkdir -p out/venom
+  (
+    cd out/venom
+    exec "${ROOT_DIR}/test/scripts/venom.sh" run "${ROOT_DIR}/test/venom/enricher_e2e.yml" --output-dir . --format=xml --html-report "$@"
+  )
+}
+
+output_rid_from_alias_map() {
+  extract_alias_rid "output" "${LOCAL_ALIAS_MAP_FILE}"
+}
+
+committed_output_csv_path() {
+  local output_rid="$1"
+  printf '%s/%s/_committed/readTable.csv' "${LOCAL_UPLOAD_DIR}" "${output_rid}"
+}
+
+file_signature() {
+  local path="$1"
+  if [[ ! -f "${path}" ]]; then
+    printf 'missing'
+    return
+  fi
+  cksum "${path}" | awk '{print $1 ":" $2}'
+}
+
+validate_committed_output() {
+  local output_rid="$1"
+  local committed_csv
+  committed_csv="$(committed_output_csv_path "${output_rid}")"
+
+  if [[ ! -f "${committed_csv}" ]]; then
+    echo "fail: missing committed output (${committed_csv})" >&2
+    return 1
+  fi
+  if tail -n +2 "${committed_csv}" | grep -q ',error,'; then
+    echo "fail: committed output has error rows (${committed_csv})" >&2
+    tail -n +1 "${committed_csv}" >&2
+    return 1
+  fi
+  if ! tail -n +2 "${committed_csv}" | grep -q ',ok,'; then
+    echo "fail: committed output has no successful rows (${committed_csv})" >&2
+    tail -n +1 "${committed_csv}" >&2
+    return 1
+  fi
+  echo "ok: committed output has successful rows and no errors (${committed_csv})"
+}
+
+run_foundry_emulated_watch() {
+  local input_rid=""
+  local output_rid=""
+  local input_fixture=""
+  local previous_sig=""
+  local current_sig=""
+
+  preflight_foundry_emulated
+  require_gemini_env
+
+  input_rid="$(extract_alias_rid "input" "${LOCAL_ALIAS_MAP_FILE}")"
+  output_rid="$(output_rid_from_alias_map)"
+  if [[ -z "${input_rid}" || -z "${output_rid}" ]]; then
+    echo "fail: could not parse input/output RID from ${LOCAL_ALIAS_MAP_FILE}" >&2
+    return 1
+  fi
+  input_fixture="${LOCAL_INPUT_DIR}/${input_rid}.csv"
+  if [[ ! -f "${input_fixture}" ]]; then
+    echo "fail: missing input fixture (${input_fixture})" >&2
+    return 1
+  fi
+
+  echo "watch: starting mock-foundry service"
+  LOCAL_UID="$(id -u)" LOCAL_GID="$(id -g)" docker compose -f "${LOCAL_COMPOSE_FILE}" up -d --build mock-foundry
+  trap 'LOCAL_UID="$(id -u)" LOCAL_GID="$(id -g)" docker compose -f "${LOCAL_COMPOSE_FILE}" down --remove-orphans >/dev/null 2>&1 || true' EXIT INT TERM
+
+  echo "watch: running initial enrichment"
+  LOCAL_UID="$(id -u)" LOCAL_GID="$(id -g)" docker compose -f "${LOCAL_COMPOSE_FILE}" run --rm enricher
+  validate_committed_output "${output_rid}" || true
+  previous_sig="$(file_signature "${input_fixture}")"
+
+  echo "watch: monitoring ${input_fixture} (poll interval: 2s)"
+  echo "watch: edit the CSV to trigger reruns; press Ctrl+C to stop"
+  while true; do
+    sleep 2
+    current_sig="$(file_signature "${input_fixture}")"
+    if [[ "${current_sig}" != "${previous_sig}" ]]; then
+      echo "watch: input changed; running enrichment"
+      previous_sig="${current_sig}"
+      if ! LOCAL_UID="$(id -u)" LOCAL_GID="$(id -g)" docker compose -f "${LOCAL_COMPOSE_FILE}" run --rm enricher; then
+        echo "fail: enricher container run failed; continuing to watch" >&2
+        continue
+      fi
+      validate_committed_output "${output_rid}" || true
+    fi
   done
-
-  case "${scope}" in
-    unit)
-      go test ./... "${extra[@]}"
-      ;;
-    integration)
-      go test ./internal/app ./pkg/mockfoundry ./examples/email_enricher/pipeline ./pkg/pipeline/io/foundry "${extra[@]}"
-      ;;
-    e2e)
-      go test -tags=gemini_e2e ./... "${extra[@]}"
-      ;;
-    *)
-      echo "invalid scope: ${scope}" >&2
-      return 2
-      ;;
-  esac
 }
 
 run_foundry_emulated() {
+  if [[ "${1:-}" == "--watch" ]]; then
+    shift
+    if [[ $# -gt 0 ]]; then
+      echo "unknown arg for foundry-emulated --watch: $1" >&2
+      return 2
+    fi
+    run_foundry_emulated_watch
+    return
+  fi
+  if [[ $# -gt 0 ]]; then
+    echo "unknown arg for foundry-emulated: $1" >&2
+    return 2
+  fi
+
   preflight_foundry_emulated
+  require_gemini_env
   LOCAL_UID="$(id -u)" LOCAL_GID="$(id -g)" docker compose -f "${LOCAL_COMPOSE_FILE}" up --abort-on-container-exit --build
 }
 
@@ -330,7 +417,7 @@ main() {
       ;;
     test)
       shift
-      run_test "$@"
+      run_e2e "$@"
       ;;
     run)
       shift
@@ -355,7 +442,7 @@ main() {
       ;;
     e2e)
       shift
-      exec ./test/scripts/venom.sh run test/venom/enricher_e2e.yml "$@"
+      run_e2e "$@"
       ;;
     clean)
       shift
