@@ -1,0 +1,107 @@
+name: publish-foundry
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/publish-foundry.yml"
+      - "Dockerfile"
+      - "go.mod"
+      - "go.sum"
+      - "cmd/**"
+      - "internal/**"
+      - "pkg/**"
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Resolve tags
+        id: meta
+        env:
+          FOUNDRY_REGISTRY_HOST: ${{ secrets.FOUNDRY_REGISTRY_HOST }}
+          FOUNDRY_DOCKER_IMAGE_NAME: ${{ secrets.FOUNDRY_DOCKER_IMAGE_NAME }}
+        run: |
+          set -euo pipefail
+
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            image_ref="local/pipeline-search"
+          else
+            : "${FOUNDRY_REGISTRY_HOST:?missing FOUNDRY_REGISTRY_HOST secret}"
+            : "${FOUNDRY_DOCKER_IMAGE_NAME:?missing FOUNDRY_DOCKER_IMAGE_NAME secret}"
+            image_ref="${FOUNDRY_REGISTRY_HOST}/${FOUNDRY_DOCKER_IMAGE_NAME}"
+          fi
+
+          sha_tag="sha-${GITHUB_SHA}"
+          tags="${image_ref}:${sha_tag}"
+
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
+            tags+=$'\n'"${image_ref}:${GITHUB_REF_NAME}"
+          fi
+
+          {
+            echo "image_ref=${image_ref}"
+            echo "sha_tag=${sha_tag}"
+            echo "tags<<EOF"
+            echo "${tags}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Login to Foundry registry
+        if: github.event_name != 'pull_request'
+        env:
+          FOUNDRY_ARTIFACT_REPOSITORY_RID: ${{ secrets.FOUNDRY_ARTIFACT_REPOSITORY_RID }}
+          FOUNDRY_TOKEN: ${{ secrets.FOUNDRY_TOKEN }}
+          FOUNDRY_REGISTRY_HOST: ${{ secrets.FOUNDRY_REGISTRY_HOST }}
+        run: |
+          set -euo pipefail
+          : "${FOUNDRY_ARTIFACT_REPOSITORY_RID:?missing FOUNDRY_ARTIFACT_REPOSITORY_RID secret}"
+          : "${FOUNDRY_TOKEN:?missing FOUNDRY_TOKEN secret}"
+          : "${FOUNDRY_REGISTRY_HOST:?missing FOUNDRY_REGISTRY_HOST secret}"
+          echo "${FOUNDRY_TOKEN}" | docker login -u "${FOUNDRY_ARTIFACT_REPOSITORY_RID}" --password-stdin "${FOUNDRY_REGISTRY_HOST}"
+
+      - name: Build image (push on non-PR events)
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          provenance: false
+          sbom: false
+
+      - name: Workflow summary
+        run: |
+          set -euo pipefail
+          {
+            echo "## Foundry Docker Publish"
+            echo ""
+            echo "- Event: \`${GITHUB_EVENT_NAME}\`"
+            echo "- Image: \`${{ steps.meta.outputs.image_ref }}\`"
+            echo "- Tags:"
+            while IFS= read -r tag; do
+              [[ -z "${tag}" ]] && continue
+              echo "  - \`${tag}\`"
+            done <<'EOF'
+          ${{ steps.meta.outputs.tags }}
+          EOF
+            if [[ "${GITHUB_EVENT_NAME}" != "pull_request" ]]; then
+              echo "- Digest: \`${{ steps.build.outputs.digest }}\`"
+            else
+              echo "- Publish: skipped on pull requests"
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
