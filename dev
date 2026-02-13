@@ -255,17 +255,45 @@ doctor_json() {
 }
 
 require_gemini_env() {
+  load_gemini_env_from_dotenv
+
+  if [[ -z "${GEMINI_MODEL:-}" ]]; then
+    export GEMINI_MODEL="gemini-2.5-flash"
+  fi
+
   local missing=0
   if [[ -z "${GEMINI_API_KEY:-}" ]]; then
     echo "missing env: GEMINI_API_KEY" >&2
     missing=1
   fi
-  if [[ -z "${GEMINI_MODEL:-}" ]]; then
-    echo "missing env: GEMINI_MODEL" >&2
-    missing=1
-  fi
   if [[ "${missing}" -ne 0 ]]; then
     return 1
+  fi
+}
+
+dotenv_lookup() {
+  local key="$1"
+  local dotenv_path="${ROOT_DIR}/.env"
+  [[ -f "${dotenv_path}" ]] || return 1
+  (
+    set -a
+    # shellcheck disable=SC1090
+    source "${dotenv_path}"
+    eval "printf '%s' \"\${${key}:-}\""
+  )
+}
+
+load_gemini_env_from_dotenv() {
+  local val=""
+  if [[ -z "${GEMINI_API_KEY:-}" ]]; then
+    if val="$(dotenv_lookup GEMINI_API_KEY)" && [[ -n "${val}" ]]; then
+      export GEMINI_API_KEY="${val}"
+    fi
+  fi
+  if [[ -z "${GEMINI_MODEL:-}" ]]; then
+    if val="$(dotenv_lookup GEMINI_MODEL)" && [[ -n "${val}" ]]; then
+      export GEMINI_MODEL="${val}"
+    fi
   fi
 }
 

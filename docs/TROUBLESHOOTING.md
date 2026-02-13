@@ -96,10 +96,10 @@ Symptoms:
 Why it happens:
 
 - Real Gemini calls are required for `./dev test`.
-- Invalid or missing `GEMINI_API_KEY` / `GEMINI_MODEL` causes per-row failures.
+- Invalid or missing `GEMINI_API_KEY` causes per-row failures.
 
 Fix:
 
 - Ensure `GEMINI_API_KEY` is valid and has access to the selected model.
-- Ensure `GEMINI_MODEL` is set (for example `gemini-2.5-flash`).
+- `GEMINI_MODEL` is optional; default is `gemini-2.5-flash`.
 - Re-run `./dev test` and verify rows contain `,ok,,` and no `,error,`.

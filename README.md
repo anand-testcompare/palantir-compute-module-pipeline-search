@@ -62,9 +62,10 @@ Run locally (no Foundry required, Gemini required):
 
 ```bash
 export GEMINI_API_KEY=...
-export GEMINI_MODEL=gemini-2.5-flash
 ./dev run local -- --input /path/to/emails.csv --output /path/to/enriched.csv
 ```
+
+`GEMINI_MODEL` is optional; default is `gemini-2.5-flash`.
 
 Run Foundry-like flow locally (mock dataset API + real Gemini + real container):
 
@@ -95,7 +96,6 @@ Run CI-style docker-compose E2E (fixed fixtures + output validation):
 
 ```bash
 export GEMINI_API_KEY=...
-export GEMINI_MODEL=gemini-2.5-flash
 ./dev test -v
 ```
 
