@@ -134,12 +134,8 @@ func RunFoundry(
 	enrichStart := time.Now()
 	if isStream {
 		logf("incremental mode disabled for stream output; append-only streams require explicit checkpointing for dedupe")
-		branch := strings.TrimSpace(outputRef.Branch)
-		if branch == "" {
-			branch = "master"
-		}
 		writeStart := time.Now()
-		logf("publishing rows to stream-proxy (%s@%s)", outputRef.RID, branch)
+		logf("publishing rows to stream-proxy (%s@%s)", outputRef.RID, outputBranch)
 
 		processedRows := 0
 		publishedRows := 0

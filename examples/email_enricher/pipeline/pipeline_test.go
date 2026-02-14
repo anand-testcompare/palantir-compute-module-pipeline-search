@@ -55,12 +55,15 @@ func TestEnrichEmails(t *testing.T) {
 type blockingEnricher struct {
 	releaseSlow chan struct{}
 	startedSlow chan struct{}
+	startedOnce sync.Once
 }
 
-func (b blockingEnricher) Enrich(_ context.Context, email string) (enrich.Result, error) {
+func (b *blockingEnricher) Enrich(_ context.Context, email string) (enrich.Result, error) {
 	email = strings.TrimSpace(strings.ToLower(email))
 	if email == "slow@example.com" {
-		close(b.startedSlow)
+		b.startedOnce.Do(func() {
+			close(b.startedSlow)
+		})
 		<-b.releaseSlow
 	}
 	domain := ""
@@ -77,7 +80,7 @@ func (b blockingEnricher) Enrich(_ context.Context, email string) (enrich.Result
 func TestEnrichEmailsStream_CompletionOrder(t *testing.T) {
 	releaseSlow := make(chan struct{})
 	startedSlow := make(chan struct{})
-	enricher := blockingEnricher{
+	enricher := &blockingEnricher{
 		releaseSlow: releaseSlow,
 		startedSlow: startedSlow,
 	}

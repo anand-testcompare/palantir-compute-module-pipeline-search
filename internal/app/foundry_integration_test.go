@@ -447,11 +447,14 @@ func TestRunFoundry_WritesToStreamProxyWhenOutputIsStream(t *testing.T) {
 type blockingStreamEnricher struct {
 	releaseSlow chan struct{}
 	startedSlow chan struct{}
+	startedOnce sync.Once
 }
 
-func (e blockingStreamEnricher) Enrich(_ context.Context, email string) (enrich.Result, error) {
+func (e *blockingStreamEnricher) Enrich(_ context.Context, email string) (enrich.Result, error) {
 	if strings.EqualFold(strings.TrimSpace(email), "slow@example.com") {
-		close(e.startedSlow)
+		e.startedOnce.Do(func() {
+			close(e.startedSlow)
+		})
 		<-e.releaseSlow
 	}
 	domain := ""
@@ -512,7 +515,7 @@ func TestRunFoundry_StreamPublishesBeforeAllRowsFinish(t *testing.T) {
 			"enriched.csv",
 			"stream",
 			pipeline.Options{Workers: 2},
-			blockingStreamEnricher{releaseSlow: releaseSlow, startedSlow: startedSlow},
+			&blockingStreamEnricher{releaseSlow: releaseSlow, startedSlow: startedSlow},
 		)
 	}()
 
