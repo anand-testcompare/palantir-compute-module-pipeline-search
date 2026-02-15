@@ -499,6 +499,15 @@ func readExistingOutputRows(
 			logger.Printf("run=%s incremental: no prior output snapshot found for %s@%s", runID, outputRef.RID, branch)
 			return map[string]pipeline.Row{}, nil
 		}
+		if isPermissionDeniedError(err) {
+			logger.Printf(
+				"run=%s incremental: no permission to read prior output snapshot for %s@%s; proceeding without cache",
+				runID,
+				outputRef.RID,
+				branch,
+			)
+			return map[string]pipeline.Row{}, nil
+		}
 		return nil, fmt.Errorf("read prior output dataset snapshot: %w", err)
 	}
 
@@ -542,6 +551,11 @@ func chooseBestIncrementalRow(a, b pipeline.Row) pipeline.Row {
 func isNotFoundError(err error) bool {
 	var he *foundry.HTTPError
 	return errors.As(err, &he) && he.StatusCode == 404
+}
+
+func isPermissionDeniedError(err error) bool {
+	var he *foundry.HTTPError
+	return errors.As(err, &he) && he.StatusCode == 403
 }
 
 func emailKey(email string) string {
