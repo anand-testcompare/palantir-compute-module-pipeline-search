@@ -183,8 +183,21 @@ Gemini options:
 Put Foundry UI screenshots in `docs/screenshots/` and reference them from this README.
 
 - Convention: `docs/screenshots/<short-topic>-<yyyy-mm-dd>.png`
-- Example:
 
-```md
-![Compute module run in Foundry](docs/screenshots/compute-module-run-2026-02-15.png)
-```
+Current screenshots:
+
+Compute module configuration (pipelines mode, sources + env vars):
+
+![Foundry compute module configuration](docs/screenshots/foundry-compute-module-configure-2026-02-15.png)
+
+Lineage overview (inputs, sources, egress, output):
+
+![Foundry data lineage view](docs/screenshots/foundry-data-lineage-2026-02-15.png)
+
+Streaming dataset current transaction view:
+
+![Foundry stream current transaction view](docs/screenshots/foundry-stream-transaction-view-2026-02-15.png)
+
+Streaming dataset metrics:
+
+![Foundry stream metrics](docs/screenshots/foundry-stream-metrics-2026-02-15.png)
