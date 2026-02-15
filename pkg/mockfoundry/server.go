@@ -538,7 +538,7 @@ func (s *Server) serveReadTableCSV(w http.ResponseWriter, r *http.Request, datas
 	// queryable/tabular. For local harnesses, expose a CSV view of the accumulated stream records so
 	// pipeline code can implement read-after-write and incremental behavior.
 	s.mu.Lock()
-	streamBranches, isStream := s.streams[datasetRID]
+	_, isStream := s.streams[datasetRID]
 	s.mu.Unlock()
 	if isStream {
 		branch := strings.TrimSpace(r.URL.Query().Get("branchName"))
@@ -572,10 +572,7 @@ func (s *Server) serveReadTableCSV(w http.ResponseWriter, r *http.Request, datas
 		cw := csv.NewWriter(&buf)
 		_ = cw.Write(header)
 
-		recs := []map[string]any{}
-		if streamBranches != nil {
-			recs = streamBranches[branch]
-		}
+		recs := s.StreamRecords(datasetRID, branch)
 		for _, rec := range recs {
 			row := make([]string, 0, len(header))
 			for _, col := range header {
